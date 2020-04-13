@@ -1,0 +1,167 @@
+.container{
+    background-color: silver;
+    height: 100vh;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.block{
+    height:50px;
+    width:50px;
+    display:inline-block;
+    box-sizing:border-box;
+    position:relative;
+}
+
+.common{
+    height:20px;
+    width:20px;
+    background-color:red;
+    position: absolute;
+    border-radius: 50%;
+    left: 50%;
+    top: 50%;
+    border: 1px solid #262626;
+}
+
+.one{
+    transform: translate(-50%,-50%);
+}
+
+.two{
+    transform: translate(-20%,-50%);
+}
+
+.two::after{
+    content: '';
+    position: absolute;
+    height:20px;
+    width:20px;
+    background-color:red;
+    border-radius: 50%;
+    left: 50%;
+    top: 50%;
+    border: 1px solid #262626;
+    transform: translate(-100%,-50%);
+}
+
+.three{
+    transform: translate(-10%,-60%);
+}
+
+.three::after{
+    content: '';
+    position: absolute;
+    height:20px;
+    width:20px;
+    background-color:red;
+    border-radius: 50%;
+    left: 50%;
+    top: 50%;
+    border: 1px solid #262626;
+    transform: translate(-120%,-50%);
+}
+
+.three::before{
+    content: '';
+    position: absolute;
+    height:20px;
+    width:20px;
+    background-color:red;
+    border-radius: 50%;
+    left: 50%;
+    top: 50%;
+    border: 1px solid #262626;
+    transform: translate(-80%,-10%);
+}
+
+/* 
+.value{
+    height: 20px;
+    width: 20px;
+    background-color: black;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%,-50%);
+} */
+/* 
+.single {
+    display: inline-block;
+    height: 20px;
+    width: 20px;
+    background-color: red;
+    filter: blur(0.5px);
+    border: 1px red solid;
+    border-radius: 50%;
+    animation: rotate 1s linear infinite;
+}
+
+.duo{
+    display: inline-block;
+    height: 20px;
+    width: 20px;
+    background-color: red;
+    filter: blur(0.5px);
+    border: 1px black solid;
+    border-radius: 50%;
+    animation: rotate 1s linear infinite;
+}
+
+.duo::after{
+    content: '';
+    position: absolute;
+    left: 5px;
+    height: 20px;
+    width: 20px;
+    background-color: red;
+    filter: blur(0.5px);
+    border: 1px black solid;
+    border-radius: 50%;
+}
+
+.three{
+    display: inline-block;
+    height: 20px;
+    width: 20px;
+    background-color: red;
+    filter: blur(0.5px);
+    border: 1px black solid;
+    border-radius: 50%;
+    animation: rotate 1s linear infinite;
+}
+
+.three::after{
+    content: '';
+    position: absolute;
+    left: 5px;
+    height: 20px;
+    width: 20px;
+    background-color: red;
+    filter: blur(0.5px);
+    border: 1px black solid;
+    border-radius: 50%;
+}
+
+.three::before{
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    height: 20px;
+    width: 20px;
+    background-color: red;
+    filter: blur(0.5px);
+    border: 1px black solid;
+    border-radius: 50%;
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+} */
