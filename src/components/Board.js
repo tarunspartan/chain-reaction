@@ -11,31 +11,35 @@ const Board = () => {
     useEffect(() => {
         let columns = ~~(window.innerWidth/50)
         setBoardColumns(columns)
-        let rows = ~~(window.innerHeight/50)
+        let rows = ~~((window.innerHeight)/50)
         setBoardRows(rows)
         let a = new Array(rows).fill(0)
-        let b = a.map(i => a[i] = new Array(columns).fill([0,'red']))
+        let b = a.map(i => a[i] = new Array(columns).fill([0,null]))
         setBoardArray(b)
     },[])
 
     const blockClickHandler = (x,y,Player) => {
+        checkWinningStats()
         setTimeout(() => {
             if(Player)
             changeUser()
-            // console.log(x,y)
-            // console.log('BoardRows',BoardRows-1)
-            // console.log('BoardColumns',BoardColumns-1)
             if((x === 0 && y === 0) || (x === 0 && y === BoardColumns-1) || (y === 0 && x === BoardRows-1) || (x === BoardRows-1 && y === BoardColumns-1)){
-                // console.log('Corner')
                 return BoardArray[x][y][0] === 1 ? splitHandler(x,y,'corner') : incrementHandler(x,y)
             }else if(x === 0 || y === 0 || x === BoardRows-1 || y === BoardColumns-1){
-                // console.log('Side')
                 return BoardArray[x][y][0] === 2 ? splitHandler(x,y,'side') : incrementHandler(x,y)
             }else{  
-                // console.log('Center')
                 return BoardArray[x][y][0] === 3 ? splitHandler(x,y,'center') : incrementHandler(x,y)
             }
-        }, 100); 
+        }, 150);
+    }
+
+    const checkWinningStats = () => {
+        let reds = 0
+        let greens = 0
+        BoardArray.map(row => {
+            return row.map(block => block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null)
+        })
+        console.log(`reds${reds} greens${greens}`)
     }
 
     const changeUser = () => {
@@ -43,21 +47,21 @@ const Board = () => {
     }
 
     const incrementHandler = (x,y) => {
-        // console.log('Increment Handler')
         let items = [...BoardArray]
         let item = [...items[x][y]]
         item[0] += 1
+        item[1] = Player
         items[x][y] = item
         setBoardArray(items)
     }
 
     const setToZeroHandler = (x,y) => {
         BoardArray[x][y][0] = 0
+        BoardArray[x][y][1] = null
         setBoardArray([...BoardArray])
     }
 
     const splitHandler = (x,y,position) => {
-        // console.log('Split Handler')
         switch (position) {
             case 'corner':
                 return x === 0 && y === 0 ? 
@@ -114,14 +118,16 @@ const Board = () => {
                     {row.map((col,colindex) => {
                         return <React.Fragment key={rowindex+colindex}>
                             <div className='block' 
-                            // style={Player === 'red' ? {border:'1px solid red'} : {border:'1px solid green'}}
                                 style={{border:`1px solid ${Player}`}}
-                                onClick={() => blockClickHandler(rowindex,colindex,Player)}>
+                                onClick={BoardArray[rowindex][colindex][1] === Player || BoardArray[rowindex][colindex][1] === null ? () => blockClickHandler(rowindex,colindex,Player) : null}
+                                >
                                 <div className={BoardArray[rowindex][colindex][0] === 1 ? 
                                                     'one common' : 
                                                 BoardArray[rowindex][colindex][0] === 2 ? 
                                                     'two common' : BoardArray[rowindex][colindex][0] === 3 ?
-                                                    'three common' : 'empty'}>
+                                                    'three common' : 'empty'}
+                                        style={{backgroundColor:BoardArray[rowindex][colindex][1]}}
+                                    >
 
                                 </div>
                             </div>

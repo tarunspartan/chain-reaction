@@ -1,9 +1,10 @@
-:root {
-    --main-color: red;
-  }
+*{
+    box-sizing: border-box;
+    transition-duration: 200ms;
+    background-color: rgb(255, 255, 255);
+}
 
-  .container{
-    background-color: silver;
+.container{
     height: 100vh;
     width: 100%;
     display: flex;
@@ -15,157 +16,67 @@
     height:50px;
     width:50px;
     display:inline-block;
-    box-sizing:border-box;
     position:relative;
 }
 
 .common{
     height:20px;
     width:20px;
-    background-color:var(--main-color);
-    position: absolute;
     border-radius: 50%;
-    left: 50%;
-    top: 50%;
-    border: 1px solid #262626;
+    position: absolute;
+    border: 1px solid whitesmoke;
 }
 
 .one{
-    transform: translate(-50%,-50%);
+    left: 15px;
+    top: 15px;
 }
 
 .two{
-    transform: translate(-20%,-50%);
+    left: 8px;
+    top: 15px;
 }
 
-.two::after{
+.two::before{
     content: '';
     position: absolute;
-    height:20px;
-    width:20px;
-    background-color:var(--main-color);
-    border-radius: 50%;
-    left: 50%;
-    top: 50%;
-    border: 1px solid #262626;
-    transform: translate(-100%,-50%);
+    height:inherit;
+    width:inherit;
+    background-color:inherit;
+    border-radius: inherit;
+    left: 11px;
+    top: -1px;
+    box-sizing: inherit;
+    border: inherit;
 }
 
 .three{
-    transform: translate(-10%,-60%);
+    left: 9px;
+    top: 10px;
 }
 
 .three::after{
     content: '';
     position: absolute;
-    height:20px;
-    width:20px;
-    background-color:var(--main-color);
-    border-radius: 50%;
-    left: 50%;
-    top: 50%;
-    border: 1px solid #262626;
-    transform: translate(-120%,-50%);
+    height:inherit;
+    width:inherit;
+    background-color:inherit;
+    border-radius: inherit;
+    left: 12px;
+    top: -1px;
+    box-sizing: inherit;
+    border: inherit;
 }
 
 .three::before{
     content: '';
     position: absolute;
-    height:20px;
-    width:20px;
-    background-color:var(--main-color);
-    border-radius: 50%;
-    left: 50%;
-    top: 50%;
-    border: 1px solid #262626;
-    transform: translate(-80%,-10%);
-}
-
-/* 
-.value{
-    height: 20px;
-    width: 20px;
-    background-color: black;
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%,-50%);
-} */
-/* 
-.single {
-    display: inline-block;
-    height: 20px;
-    width: 20px;
-    background-color: red;
-    filter: blur(0.5px);
-    border: 1px red solid;
-    border-radius: 50%;
-    animation: rotate 1s linear infinite;
-}
-
-.duo{
-    display: inline-block;
-    height: 20px;
-    width: 20px;
-    background-color: red;
-    filter: blur(0.5px);
-    border: 1px black solid;
-    border-radius: 50%;
-    animation: rotate 1s linear infinite;
-}
-
-.duo::after{
-    content: '';
-    position: absolute;
+    height:inherit;
+    width:inherit;
+    background-color:inherit;
+    border-radius: inherit;
     left: 5px;
-    height: 20px;
-    width: 20px;
-    background-color: red;
-    filter: blur(0.5px);
-    border: 1px black solid;
-    border-radius: 50%;
+    top: 8px;
+    box-sizing: inherit;
+    border: inherit;
 }
-
-.three{
-    display: inline-block;
-    height: 20px;
-    width: 20px;
-    background-color: red;
-    filter: blur(0.5px);
-    border: 1px black solid;
-    border-radius: 50%;
-    animation: rotate 1s linear infinite;
-}
-
-.three::after{
-    content: '';
-    position: absolute;
-    left: 5px;
-    height: 20px;
-    width: 20px;
-    background-color: red;
-    filter: blur(0.5px);
-    border: 1px black solid;
-    border-radius: 50%;
-}
-
-.three::before{
-    content: '';
-    position: absolute;
-    bottom: 3px;
-    height: 20px;
-    width: 20px;
-    background-color: red;
-    filter: blur(0.5px);
-    border: 1px black solid;
-    border-radius: 50%;
-}
-
-@keyframes rotate {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-} */
