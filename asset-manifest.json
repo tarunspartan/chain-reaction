@@ -1,0 +1,22 @@
+{
+  "files": {
+    "main.css": "/chain-reaction/static/css/main.02eb3ba2.chunk.css",
+    "main.js": "/chain-reaction/static/js/main.ef6caca3.chunk.js",
+    "main.js.map": "/chain-reaction/static/js/main.ef6caca3.chunk.js.map",
+    "runtime-main.js": "/chain-reaction/static/js/runtime-main.3c84e1d0.js",
+    "runtime-main.js.map": "/chain-reaction/static/js/runtime-main.3c84e1d0.js.map",
+    "static/js/2.f86999d5.chunk.js": "/chain-reaction/static/js/2.f86999d5.chunk.js",
+    "static/js/2.f86999d5.chunk.js.map": "/chain-reaction/static/js/2.f86999d5.chunk.js.map",
+    "index.html": "/chain-reaction/index.html",
+    "precache-manifest.5a6a13853c65d88ad4d19917e8856dc2.js": "/chain-reaction/precache-manifest.5a6a13853c65d88ad4d19917e8856dc2.js",
+    "service-worker.js": "/chain-reaction/service-worker.js",
+    "static/css/main.02eb3ba2.chunk.css.map": "/chain-reaction/static/css/main.02eb3ba2.chunk.css.map",
+    "static/js/2.f86999d5.chunk.js.LICENSE.txt": "/chain-reaction/static/js/2.f86999d5.chunk.js.LICENSE.txt"
+  },
+  "entrypoints": [
+    "static/js/runtime-main.3c84e1d0.js",
+    "static/js/2.f86999d5.chunk.js",
+    "static/css/main.02eb3ba2.chunk.css",
+    "static/js/main.ef6caca3.chunk.js"
+  ]
+}
