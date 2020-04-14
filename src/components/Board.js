@@ -3,10 +3,14 @@ import './Board.css'
 
 const Board = () => {
 
+    let flag = 0
+    let clickable = true
+
     const [ BoardArray, setBoardArray ] = useState([])
     const [ BoardColumns, setBoardColumns ] = useState('')
     const [ BoardRows, setBoardRows ] = useState('')
     const [ Player, setPlayer ] = useState('red')
+    const [ click, setClick ] = useState(true)
 
     useEffect(() => {
         let columns = ~~(window.innerWidth/50)
@@ -19,7 +23,8 @@ const Board = () => {
     },[])
 
     const blockClickHandler = (x,y,Player) => {
-        checkWinningStats()
+        if(clickable){
+        flag+=1
         setTimeout(() => {
             if(Player)
             changeUser()
@@ -31,15 +36,41 @@ const Board = () => {
                 return BoardArray[x][y][0] === 3 ? splitHandler(x,y,'center') : incrementHandler(x,y)
             }
         }, 150);
+        }
     }
 
     const checkWinningStats = () => {
-        let reds = 0
-        let greens = 0
+        if(flag >= 3){
+        let reds = null
+        let greens = null
         BoardArray.map(row => {
-            return row.map(block => block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null)
+            return row.map(block => block[1] !== null ? block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null : null)
         })
-        console.log(`reds${reds} greens${greens}`)
+        if(reds === null){
+            setClick(!click)
+            document.getElementById('container').style.filter = 'opacity(0.7)'
+            clickable = false
+            let div = document.createElement('div')
+            div.style.width = '75%'
+            div.style.position = 'absolute'
+            div.style.top = '100px'
+            div.innerHTML = `<center>Player Green Won<br /><span>Tap to play again</center>`
+            document.getElementById('container').appendChild(div)
+            document.getElementById('container').onclick = () => window.location.reload()
+        }
+        if(greens === null){
+            setClick(!click)
+            document.getElementById('container').style.filter = 'opacity(0.7)'
+            clickable = false
+            let div = document.createElement('div')
+            div.style.width = '75%'
+            div.style.position = 'absolute'
+            div.style.top = '100px'
+            div.innerHTML = `<center>Player Red Won<br /><span>Tap to play again</center>`
+            document.getElementById('container').appendChild(div)
+            document.getElementById('container').onclick = () => window.location.reload()
+        }
+        }
     }
 
     const changeUser = () => {
@@ -53,6 +84,7 @@ const Board = () => {
         item[1] = Player
         items[x][y] = item
         setBoardArray(items)
+        checkWinningStats()
     }
 
     const setToZeroHandler = (x,y) => {
@@ -110,16 +142,16 @@ const Board = () => {
     }
 
     return (
-        <div className='container'>
+        <div className='container' id='container'>
             <div className='centerDiv'>
             {
                 BoardArray.map((row,rowindex) => {
                     return <div key={rowindex} style={{height:'50px'}}>
                     {row.map((col,colindex) => {
                         return <React.Fragment key={rowindex+colindex}>
-                            <div className='block' 
+                            <div className='block'
                                 style={{border:`1px solid ${Player}`}}
-                                onClick={BoardArray[rowindex][colindex][1] === Player || BoardArray[rowindex][colindex][1] === null ? () => blockClickHandler(rowindex,colindex,Player) : null}
+                                onClick={(click && (BoardArray[rowindex][colindex][1] === Player || BoardArray[rowindex][colindex][1] === null)) ? () => blockClickHandler(rowindex,colindex,Player) : null}
                                 >
                                 <div className={BoardArray[rowindex][colindex][0] === 1 ? 
                                                     'one common' : 
