@@ -80,3 +80,25 @@
     box-sizing: inherit;
     border: inherit;
 }
+
+.winBoard {
+    /* width: 70vw; */
+    /* height: 40vh; */
+    position: fixed;
+    display: none;
+    box-shadow: 10px 10px 10px rgb(116, 116, 116);
+    color: #262626;
+    font-weight: bolder;
+    font-size: 120%;
+    opacity: 1 !important;
+    text-transform: uppercase;
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+}
+
+.replay{
+    position: relative;
+    border: 5px solid #262626;
+    border-radius: 50px;
+    padding: 10px;
+    margin: 10px;
+}

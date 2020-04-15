@@ -1,41 +1,48 @@
 import React, { useEffect, useState } from 'react'
 import './Board.css'
+let clickable = true
 
 const Board = () => {
 
     let flag = 0
-    let clickable = true
+    let letMeIn = true
 
     const [ BoardArray, setBoardArray ] = useState([])
     const [ BoardColumns, setBoardColumns ] = useState('')
     const [ BoardRows, setBoardRows ] = useState('')
     const [ Player, setPlayer ] = useState('red')
-    const [ click, setClick ] = useState(true)
 
     useEffect(() => {
-        let columns = ~~(window.innerWidth/50)
-        setBoardColumns(columns)
-        let rows = ~~((window.innerHeight)/50)
-        setBoardRows(rows)
-        let a = new Array(rows).fill(0)
-        let b = a.map(i => a[i] = new Array(columns).fill([0,null]))
+        setBoardColumns(~~(window.innerWidth/50))
+        setBoardRows(~~((window.innerHeight)/50))
+        let a = new Array(BoardRows).fill(0)
+        let b = a.map(i => a[i] = new Array(BoardColumns).fill([0,null]))
         setBoardArray(b)
-    },[])
+    },[BoardRows,BoardColumns])
 
     const blockClickHandler = (x,y,Player) => {
         if(clickable){
         flag+=1
-        setTimeout(() => {
-            if(Player)
-            changeUser()
-            if((x === 0 && y === 0) || (x === 0 && y === BoardColumns-1) || (y === 0 && x === BoardRows-1) || (x === BoardRows-1 && y === BoardColumns-1)){
-                return BoardArray[x][y][0] === 1 ? splitHandler(x,y,'corner') : incrementHandler(x,y)
-            }else if(x === 0 || y === 0 || x === BoardRows-1 || y === BoardColumns-1){
-                return BoardArray[x][y][0] === 2 ? splitHandler(x,y,'side') : incrementHandler(x,y)
-            }else{  
-                return BoardArray[x][y][0] === 3 ? splitHandler(x,y,'center') : incrementHandler(x,y)
+        if(Player){
+                changeUser()
+                if((x === 0 && y === 0) || (x === 0 && y === BoardColumns-1) || (y === 0 && x === BoardRows-1) || (x === BoardRows-1 && y === BoardColumns-1)){
+                    return BoardArray[x][y][0] === 1 ? splitHandler(x,y,'corner') : incrementHandler(x,y)
+                }else if(x === 0 || y === 0 || x === BoardRows-1 || y === BoardColumns-1){
+                    return BoardArray[x][y][0] === 2 ? splitHandler(x,y,'side') : incrementHandler(x,y)
+                }else{  
+                    return BoardArray[x][y][0] === 3 ? splitHandler(x,y,'center') : incrementHandler(x,y)
+                }
+            }else{
+                setTimeout(() => {
+                    if((x === 0 && y === 0) || (x === 0 && y === BoardColumns-1) || (y === 0 && x === BoardRows-1) || (x === BoardRows-1 && y === BoardColumns-1)){
+                        return BoardArray[x][y][0] === 1 ? splitHandler(x,y,'corner') : incrementHandler(x,y)
+                    }else if(x === 0 || y === 0 || x === BoardRows-1 || y === BoardColumns-1){
+                        return BoardArray[x][y][0] === 2 ? splitHandler(x,y,'side') : incrementHandler(x,y)
+                    }else{  
+                        return BoardArray[x][y][0] === 3 ? splitHandler(x,y,'center') : incrementHandler(x,y)
+                    }
+                }, 300);
             }
-        }, 150);
         }
     }
 
@@ -46,37 +53,32 @@ const Board = () => {
         BoardArray.map(row => {
             return row.map(block => block[1] !== null ? block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null : null)
         })
-        if(reds === null){
-            setClick(!click)
-            document.getElementById('container').style.filter = 'opacity(0.7)'
+        if(reds === null && letMeIn){
+            letMeIn = false
             clickable = false
-            let div = document.createElement('div')
-            div.style.width = '75%'
-            div.style.position = 'absolute'
-            div.style.top = '100px'
-            div.innerHTML = `<center>Player Green Won<br /><span>Tap to play again</center>`
-            document.getElementById('container').appendChild(div)
-            document.getElementById('container').onclick = () => window.location.reload()
+            document.getElementById('winBoard').style.display = 'block'
         }
-        if(greens === null){
-            setClick(!click)
-            document.getElementById('container').style.filter = 'opacity(0.7)'
+        if(greens === null && letMeIn){
+            letMeIn = false
             clickable = false
-            let div = document.createElement('div')
-            div.style.width = '75%'
-            div.style.position = 'absolute'
-            div.style.top = '100px'
-            div.innerHTML = `<center>Player Red Won<br /><span>Tap to play again</center>`
-            document.getElementById('container').appendChild(div)
-            document.getElementById('container').onclick = () => window.location.reload()
+            document.getElementById('winBoard').style.display = 'block'
         }
-        }
+    }
     }
 
     const changeUser = () => {
         Player === 'red' ? setPlayer('green') : setPlayer('red')
     }
 
+    const winBoard = (name) => {
+        return (
+            <div className='winBoard' id='winBoard' style={{border:`6px solid ${Player === 'red' ? 'green' : 'red'}`}}>
+                <div style={{textAlign:'center',margin:'20px',opacity:'0.9'}}>🥳 Player {Player  === 'red' ? 'green' : 'red'} Won 🥳</div><br />
+                <div style={{textAlign:'center'}} className='replay' onClick={() => window.location.reload()}>Replay 🔃</div>
+            </div>
+        )
+    }
+    
     const incrementHandler = (x,y) => {
         let items = [...BoardArray]
         let item = [...items[x][y]]
@@ -151,7 +153,7 @@ const Board = () => {
                         return <React.Fragment key={rowindex+colindex}>
                             <div className='block'
                                 style={{border:`1px solid ${Player}`}}
-                                onClick={(click && (BoardArray[rowindex][colindex][1] === Player || BoardArray[rowindex][colindex][1] === null)) ? () => blockClickHandler(rowindex,colindex,Player) : null}
+                                onClick={((BoardArray[rowindex][colindex][1] === Player || BoardArray[rowindex][colindex][1] === null)) ? () => blockClickHandler(rowindex,colindex,Player) : null}
                                 >
                                 <div className={BoardArray[rowindex][colindex][0] === 1 ? 
                                                     'one common' : 
@@ -170,6 +172,7 @@ const Board = () => {
                 })
             }
         </div>
+            {winBoard()}
         </div>
     )
 }
