@@ -21,7 +21,6 @@ const Board = () => {
     },[BoardRows,BoardColumns])
 
     const blockClickHandler = (x,y,Player) => {
-        if(clickable){
         flag+=1
         if(Player){
                 changeUser()
@@ -41,31 +40,30 @@ const Board = () => {
                     }else{  
                         return BoardArray[x][y][0] === 3 ? splitHandler(x,y,'center') : incrementHandler(x,y)
                     }
-                }, 300);
+                }, 200);
             }
-        }
     }
 
     const checkWinningStats = () => {
         if(flag >= 2){
-        let reds = null
-        let greens = null
-        BoardArray.map(row => {
-            return row.map(block => block[1] !== null ? block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null : null)
-        })
-        if((reds === null || greens === null) && letMeIn){
-            letMeIn = false
-            clickable = false
-            document.getElementById('winBoard').style.display = 'block'
+            let reds = null
+            let greens = null
+            BoardArray.map(row => {
+                return row.map(block => block[1] !== null ? block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null : null)
+            })
+            if((reds === null || greens === null) && letMeIn){
+                letMeIn = false
+                clickable = false
+                document.getElementById('winBoard').style.display = 'block'
+            }
         }
-    }
     }
 
     const changeUser = () => {
         Player === 'red' ? setPlayer('green') : setPlayer('red')
     }
 
-    const winBoard = (name) => {
+    const winBoard = () => {
         return (
             <div className='winBoard' id='winBoard' style={{border:`6px solid ${Player === 'red' ? 'green' : 'red'}`}}>
                 <div style={{textAlign:'center'}}>
@@ -150,7 +148,7 @@ const Board = () => {
                         return <React.Fragment key={rowindex+colindex}>
                             <div className='block'
                                 style={{border:`1px solid ${Player}`}}
-                                onClick={((BoardArray[rowindex][colindex][1] === Player || BoardArray[rowindex][colindex][1] === null)) ? () => blockClickHandler(rowindex,colindex,Player) : null}
+                                onClick={((BoardArray[rowindex][colindex][1] === Player || BoardArray[rowindex][colindex][1] === null) && clickable) ? () => blockClickHandler(rowindex,colindex,Player) : null}
                                 >
                                 <div className={BoardArray[rowindex][colindex][0] === 1 ? 
                                                     'one common' : 
