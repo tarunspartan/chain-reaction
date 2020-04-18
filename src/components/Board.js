@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import './Board.css'
+import sound from './drop.mp3'
 let clickable = true
 let flag = 0
 
@@ -11,6 +12,11 @@ const Board = () => {
     const [ BoardColumns, setBoardColumns ] = useState('')
     const [ BoardRows, setBoardRows ] = useState('')
     const [ Player, setPlayer ] = useState('red')
+    const [ soundStatus, setSoundStatus ] = useState(localStorage.getItem('sound') || true)
+
+    useEffect(() => {
+        localStorage.setItem('sound',soundStatus)
+    },[soundStatus])
 
     useEffect(() => {
         setBoardColumns(~~(window.innerWidth/50))
@@ -23,7 +29,8 @@ const Board = () => {
     const blockClickHandler = (x,y,Player) => {
         flag+=1
         if(Player){
-                changeUser()
+            changeUser()
+            playSound()
                 if((x === 0 && y === 0) || (x === 0 && y === BoardColumns-1) || (y === 0 && x === BoardRows-1) || (x === BoardRows-1 && y === BoardColumns-1)){
                     return BoardArray[x][y][0] === 1 ? splitHandler(x,y,'corner') : incrementHandler(x,y)
                 }else if(x === 0 || y === 0 || x === BoardRows-1 || y === BoardColumns-1){
@@ -42,6 +49,10 @@ const Board = () => {
                     }
                 }, 200);
             }
+    }
+
+    const playSound = () => {
+        return soundStatus === 'true' ? new Audio(sound).play() : null
     }
 
     const checkWinningStats = () => {
@@ -63,12 +74,20 @@ const Board = () => {
         Player === 'red' ? setPlayer('green') : setPlayer('red')
     }
 
+    const soundButtonHandler = () => {
+        localStorage.getItem('sound') === 'true' ? localStorage.setItem('sound',false) : localStorage.setItem('sound',true)
+        setSoundStatus(localStorage.getItem('sound'))
+    }
+
     const winBoard = () => {
         return (
-            <div className='winBoard' id='winBoard' style={{border:`6px solid ${Player === 'red' ? 'green' : 'red'}`}}>
+            <div className='winBoard' id='winBoard'>
                 <div style={{textAlign:'center'}}>
-                <div style={{margin:'20px',opacity:'0.9'}}><span role='img' aria-label="celeb">🥳</span> Player {Player  === 'red' ? 'green' : 'red'} Won <span role='img' aria-label="celeb">🥳</span></div>
+                <div style={{margin:'20px',opacity:'0.9'}}><span role='img' aria-label="celeb">🥳&nbsp;</span><span style={{color:`${Player  === 'red' ? 'green' : 'red'}`}}>Player {Player  === 'red' ? 'green' : 'red'} Won</span><span role='img' aria-label="celeb">&nbsp;🥳</span></div>
                 <div className='replay' onClick={() => window.location.reload()}>R e p l a y <span role='img' aria-label="reload">🔃</span></div>
+                <div onClick={() => soundButtonHandler()}>
+                    {<span role='img' aria-label='sound'>{soundStatus === 'true' ? '🔊' : '🔇'}</span>}
+                </div>
                 </div>
             </div>
         )
