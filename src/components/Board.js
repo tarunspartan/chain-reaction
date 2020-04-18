@@ -86,7 +86,7 @@ const Board = () => {
                 <div style={{margin:'20px',opacity:'0.9'}}><span role='img' aria-label="celeb">🥳&nbsp;</span><span style={{color:`${Player  === 'red' ? 'green' : 'red'}`}}>Player {Player  === 'red' ? 'green' : 'red'} Won</span><span role='img' aria-label="celeb">&nbsp;🥳</span></div>
                 <div className='replay' onClick={() => window.location.reload()}>R e p l a y <span role='img' aria-label="reload">🔃</span></div>
                 <div onClick={() => soundButtonHandler()}>
-                    {<span role='img' aria-label='sound'>{soundStatus === 'true' ? '🔊' : '🔇'}</span>}
+                    {<span role='img' aria-label='sound'>{soundStatus && soundStatus === 'true' ? '🔊' : '🔇'}</span>}
                 </div>
                 </div>
             </div>
