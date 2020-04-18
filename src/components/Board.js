@@ -53,12 +53,7 @@ const Board = () => {
         BoardArray.map(row => {
             return row.map(block => block[1] !== null ? block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null : null)
         })
-        if(reds === null && letMeIn){
-            letMeIn = false
-            clickable = false
-            document.getElementById('winBoard').style.display = 'block'
-        }
-        if(greens === null && letMeIn){
+        if((reds === null || greens === null) && letMeIn){
             letMeIn = false
             clickable = false
             document.getElementById('winBoard').style.display = 'block'
@@ -73,8 +68,10 @@ const Board = () => {
     const winBoard = (name) => {
         return (
             <div className='winBoard' id='winBoard' style={{border:`6px solid ${Player === 'red' ? 'green' : 'red'}`}}>
-                <div style={{textAlign:'center',margin:'20px',opacity:'0.9'}}>🥳 Player {Player  === 'red' ? 'green' : 'red'} Won 🥳</div><br />
-                <div style={{textAlign:'center'}} className='replay' onClick={() => window.location.reload()}>Replay 🔃</div>
+                <div style={{textAlign:'center'}}>
+                <div style={{margin:'20px',opacity:'0.9'}}><span role='img' aria-label="celeb">🥳</span> Player {Player  === 'red' ? 'green' : 'red'} Won <span role='img' aria-label="celeb">🥳</span></div>
+                <div className='replay' onClick={() => window.location.reload()}>R e p l a y <span role='img' aria-label="reload">🔃</span></div>
+                </div>
             </div>
         )
     }
