@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import './Board.css'
-import sound from './drop.mp3'
+import drop from './drop.mp3'
 let clickable = true
 let flag = 0
+const sound = new Audio(drop)
+sound.playbackRate = 1.5 
 
 const Board = () => {
 
@@ -52,7 +54,7 @@ const Board = () => {
     }
 
     const playSound = () => {
-        return soundStatus && soundStatus === 'true' ? new Audio(sound).play() : null
+        return soundStatus && soundStatus === 'true' ? sound.play() : null
     }
 
     const checkWinningStats = () => {
