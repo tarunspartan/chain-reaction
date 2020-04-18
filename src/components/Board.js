@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import './Board.css'
 let clickable = true
+let flag = 0
 
 const Board = () => {
 
-    let flag = 0
     let letMeIn = true
 
     const [ BoardArray, setBoardArray ] = useState([])
@@ -47,7 +47,7 @@ const Board = () => {
     }
 
     const checkWinningStats = () => {
-        if(flag >= 3){
+        if(flag >= 2){
         let reds = null
         let greens = null
         BoardArray.map(row => {
