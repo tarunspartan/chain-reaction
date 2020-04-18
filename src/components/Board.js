@@ -14,7 +14,7 @@ const Board = () => {
     const [ BoardColumns, setBoardColumns ] = useState('')
     const [ BoardRows, setBoardRows ] = useState('')
     const [ Player, setPlayer ] = useState('red')
-    const [ soundStatus, setSoundStatus ] = useState(localStorage.getItem('sound') || true)
+    const [ soundStatus, setSoundStatus ] = useState(localStorage.getItem('sound') || 'on')
 
     useEffect(() => {
         localStorage.setItem('sound',soundStatus)
@@ -54,7 +54,7 @@ const Board = () => {
     }
 
     const playSound = () => {
-        return soundStatus && soundStatus === 'true' ? sound.play() : null
+        return soundStatus && soundStatus === 'on' ? sound.play() : null
     }
 
     const checkWinningStats = () => {
@@ -77,7 +77,7 @@ const Board = () => {
     }
 
     const soundButtonHandler = () => {
-        localStorage.getItem('sound') === 'true' ? localStorage.setItem('sound',false) : localStorage.setItem('sound',true)
+        localStorage.getItem('sound') === 'on' ? localStorage.setItem('sound','off') : localStorage.setItem('sound','on')
         setSoundStatus(localStorage.getItem('sound'))
     }
 
@@ -88,7 +88,7 @@ const Board = () => {
                 <div style={{margin:'20px',opacity:'0.9'}}><span role='img' aria-label="celeb">🥳&nbsp;</span><span style={{color:`${Player  === 'red' ? 'green' : 'red'}`}}>Player {Player  === 'red' ? 'green' : 'red'} Won</span><span role='img' aria-label="celeb">&nbsp;🥳</span></div>
                 <div className='replay' onClick={() => window.location.reload()}>R e p l a y <span role='img' aria-label="reload">🔃</span></div>
                 <div onClick={() => soundButtonHandler()}>
-                    {<span role='img' aria-label='sound'>{soundStatus && soundStatus === 'true' ? '🔊' : '🔇'}</span>}
+                    {<span role='img' aria-label='sound'>{soundStatus && soundStatus === 'on' ? '🔊' : '🔇'}</span>}
                 </div>
                 </div>
             </div>
