@@ -52,7 +52,7 @@ const Board = () => {
     }
 
     const playSound = () => {
-        return soundStatus === 'true' ? new Audio(sound).play() : null
+        return soundStatus && soundStatus === 'true' ? new Audio(sound).play() : null
     }
 
     const checkWinningStats = () => {
