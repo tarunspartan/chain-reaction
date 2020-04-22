@@ -130,3 +130,17 @@
 .restart:hover{
     background-color: steelblue;
 }
+
+.share{
+    font-size: 12px;
+    position: relative;
+    border: 1px solid #262626;
+    padding: 2px;
+    margin: 5px;
+    background-color: #262626;
+    color: white;
+}
+
+.share:hover{
+    background-color: royalblue;
+}

@@ -107,27 +107,31 @@ const Board = () => {
             <div className='settings' id='settings'>
                 <div style={{textAlign:'center'}}>
                 <div style={{margin:'5px',opacity:'0.9'}}><span style={{color:'black'}}>Settings</span></div>
-                <div onClick={() => soundButtonHandler()}>
-                    {<span role='img' aria-label='sound'>{soundStatus && soundStatus === 'on' ? '🔊' : '🔇'}</span>}
+                <div>
+                    {<span onClick={() => soundButtonHandler()} role='img' aria-label='sound'>{soundStatus && soundStatus === 'on' ? '🔊' : '🔇'}</span>}
                 </div>
                 <div className='restart' onClick={() => window.location.reload()}>R e s t a r t</div>
-                <div style={{opacity:0.3,fontSize:'10px',textTransform:'none'}}>Designed & Built with <span role='img' aria-label="love">💙</span> by Tarun</div>
+                <div style={{opacity:0.4,fontSize:'10px',textTransform:'none'}}>Designed & Built with <span role='img' aria-label="love">💙</span> by Tarun</div>
+                {navigator.share && <span className='share' onClick={() => share()}>SHARE</span>}
                 </div>
             </div>
         )
     }
 
-    const settingsHandler = () => {
+    const share = () => {
         if (navigator.share) {
             navigator.share({
-              title: 'web.dev',
-              text: 'Check out web.dev.',
-              url: 'https://web.dev/',
+              title: 'Chain Reaction',
+              text: 'Check out this new Fun 2-Player Game called Chain Reaction 😮',
+              url: 'https://tarunspartan.github.io/chain-reaction',
             })
               .then(() => console.log('Successful share'))
               .catch((error) => console.log('Error sharing', error));
           }
-        // return document.getElementById('settings').style.display === 'block' ? document.getElementById('settings').style.display = 'none' : document.getElementById('settings').style.display = 'block'
+    }
+
+    const settingsHandler = () => {
+        return document.getElementById('settings').style.display === 'block' ? document.getElementById('settings').style.display = 'none' : document.getElementById('settings').style.display = 'block'
     }
     
     const incrementHandler = (x,y) => {
