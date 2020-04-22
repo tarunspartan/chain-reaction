@@ -70,7 +70,6 @@ const Board = () => {
                 return row.map(block => block[1] !== null ? block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null : null)
             })
             if((reds === null || greens === null)){
-                console.log('win')
                 letMeIn = false
                 clickable = false
                 document.getElementById('winBoard').style.display = 'block'
@@ -93,11 +92,11 @@ const Board = () => {
         return (
             <div className='winBoard' id='winBoard'>
                 <div style={{textAlign:'center'}}>
-                <div style={{margin:'20px',opacity:'0.9'}}><span role='img' aria-label="celeb">🥳&nbsp;</span><span style={{color:`${Player  === 'red' ? 'green' : 'red'}`}}>Player {Player  === 'red' ? 'green' : 'red'} Won</span><span role='img' aria-label="celeb">&nbsp;🥳</span></div>
+                <div style={{margin:'20px',opacity:'0.9'}}><span role='img' aria-label="celeb">&#x1F973;&nbsp;</span><span style={{color:`${Player  === 'red' ? 'green' : 'red'}`}}>Player {Player  === 'red' ? 'green' : 'red'} Won</span><span role='img' aria-label="celeb">&nbsp;&#x1F973;</span></div>
                 <div className='replay' onClick={() => {
                     window.onbeforeunload = function(){};
                     window.location.reload()
-                }}>R e p l a y&nbsp;<span role='img' aria-label="reload">🔃</span></div>
+                }}>R e p l a y&nbsp;<span role='img' aria-label="reload">&#x1F504;</span></div>
                 </div>
             </div>
         )
@@ -119,7 +118,16 @@ const Board = () => {
     }
 
     const settingsHandler = () => {
-        return document.getElementById('settings').style.display === 'block' ? document.getElementById('settings').style.display = 'none' : document.getElementById('settings').style.display = 'block'
+        if (navigator.share) {
+            navigator.share({
+              title: 'web.dev',
+              text: 'Check out web.dev.',
+              url: 'https://web.dev/',
+            })
+              .then(() => console.log('Successful share'))
+              .catch((error) => console.log('Error sharing', error));
+          }
+        // return document.getElementById('settings').style.display === 'block' ? document.getElementById('settings').style.display = 'none' : document.getElementById('settings').style.display = 'block'
     }
     
     const incrementHandler = (x,y) => {
@@ -218,7 +226,7 @@ const Board = () => {
         <div className='footer' style={{marginTop:'10px'}}>
             <div style={{display:'flex',alignItems:'center'}}>
             <div style={{color:'skyblue'}} id="shsf">∘ C H A I N • R E A C T I O N ∘</div>
-            <div style={{position:'absolute',right:'5px',fontSize:'20px',cursor:'pointer'}} onClick={() => settingsHandler()}>&nbsp;<span role='img' aria-label="settings"><b>⚙</b></span>&nbsp;</div>
+            <div style={{position:'absolute',right:'5px',fontSize:'20px',cursor:'pointer'}} onClick={() => settingsHandler()}>&#x2699;&nbsp;</div>
         </div>
         </div>
         </div>  
