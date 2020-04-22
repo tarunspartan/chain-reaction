@@ -4,7 +4,10 @@ import drop from './drop.mp3'
 let clickable = true
 let flag = 0
 const sound = new Audio(drop)
-sound.playbackRate = 1.5 
+sound.playbackRate = 1.75
+window.onbeforeunload = function(e) {
+    return "Reloading this page will reset the game";
+};
 
 const Board = () => {
 
@@ -22,7 +25,7 @@ const Board = () => {
 
     useEffect(() => {
         setBoardColumns(~~(window.innerWidth/50))
-        setBoardRows(~~((window.innerHeight)/50))
+        setBoardRows(~~((window.innerHeight-40)/50))
         let a = new Array(BoardRows).fill(0)
         let b = a.map(i => a[i] = new Array(BoardColumns).fill([0,null]))
         setBoardArray(b)
@@ -41,6 +44,7 @@ const Board = () => {
                     return BoardArray[x][y][0] === 3 ? splitHandler(x,y,'center') : incrementHandler(x,y)
                 }
             }else{
+                clickable = false   
                 setTimeout(() => {
                     if((x === 0 && y === 0) || (x === 0 && y === BoardColumns-1) || (y === 0 && x === BoardRows-1) || (x === BoardRows-1 && y === BoardColumns-1)){
                         return BoardArray[x][y][0] === 1 ? splitHandler(x,y,'corner') : incrementHandler(x,y)
@@ -58,16 +62,20 @@ const Board = () => {
     }
 
     const checkWinningStats = () => {
-        if(flag >= 2){
+        if((flag >= 2)  && letMeIn){
+            clickable = false
             let reds = null
             let greens = null
             BoardArray.map(row => {
                 return row.map(block => block[1] !== null ? block[1] === 'red' ? reds+=1 : block[1] === 'green' ? greens+=1 : null : null)
             })
-            if((reds === null || greens === null) && letMeIn){
+            if((reds === null || greens === null)){
+                console.log('win')
                 letMeIn = false
                 clickable = false
                 document.getElementById('winBoard').style.display = 'block'
+            }else{
+                clickable = true
             }
         }
     }
@@ -86,13 +94,32 @@ const Board = () => {
             <div className='winBoard' id='winBoard'>
                 <div style={{textAlign:'center'}}>
                 <div style={{margin:'20px',opacity:'0.9'}}><span role='img' aria-label="celeb">🥳&nbsp;</span><span style={{color:`${Player  === 'red' ? 'green' : 'red'}`}}>Player {Player  === 'red' ? 'green' : 'red'} Won</span><span role='img' aria-label="celeb">&nbsp;🥳</span></div>
-                <div className='replay' onClick={() => window.location.reload()}>R e p l a y <span role='img' aria-label="reload">🔃</span></div>
-                <div onClick={() => soundButtonHandler()}>
-                    {<span role='img' aria-label='sound'>{soundStatus && soundStatus === 'on' ? '🔊' : '🔇'}</span>}
-                </div>
+                <div className='replay' onClick={() => {
+                    window.onbeforeunload = function(){};
+                    window.location.reload()
+                }}>R e p l a y&nbsp;<span role='img' aria-label="reload">🔃</span></div>
                 </div>
             </div>
         )
+    }
+
+    const settings = () => {
+        return (
+            <div className='settings' id='settings'>
+                <div style={{textAlign:'center'}}>
+                <div style={{margin:'5px',opacity:'0.9'}}><span style={{color:'black'}}>Settings</span></div>
+                <div onClick={() => soundButtonHandler()}>
+                    {<span role='img' aria-label='sound'>{soundStatus && soundStatus === 'on' ? '🔊' : '🔇'}</span>}
+                </div>
+                <div className='restart' onClick={() => window.location.reload()}>R e s t a r t&nbsp;<span role='img' aria-label="reload">🔃</span></div>
+                <div style={{opacity:0.3,fontSize:'10px',textTransform:'none'}}>Designed & Built with <span role='img' aria-label="love">💙</span> by Tarun</div>
+                </div>
+            </div>
+        )
+    }
+
+    const settingsHandler = () => {
+        return document.getElementById('settings').style.display === 'block' ? document.getElementById('settings').style.display = 'none' : document.getElementById('settings').style.display = 'block'
     }
     
     const incrementHandler = (x,y) => {
@@ -106,12 +133,14 @@ const Board = () => {
     }
 
     const setToZeroHandler = (x,y) => {
+        clickable = false
         BoardArray[x][y][0] = 0
         BoardArray[x][y][1] = null
         setBoardArray([...BoardArray])
     }
 
     const splitHandler = (x,y,position) => {
+        clickable = false
         switch (position) {
             case 'corner':
                 return x === 0 && y === 0 ? 
@@ -178,7 +207,6 @@ const Board = () => {
                                                     'three common' : 'empty'}
                                         style={{backgroundColor:BoardArray[rowindex][colindex][1]}}
                                     >
-
                                 </div>
                             </div>
                         </React.Fragment>
@@ -187,8 +215,15 @@ const Board = () => {
                     </div>
                 })
             }
+        <div className='footer' style={{marginTop:'10px'}}>
+            <div style={{display:'flex'}}>
+            <div style={{color:'skyblue'}}>S T A Y H O M E - S T A Y S A F E</div>
+            <div style={{position:'absolute',right:'5px',fontSize:'20px',cursor:'pointer'}} onClick={() => settingsHandler()}>&nbsp;<span role='img' aria-label="settings"><b>⚙</b></span>&nbsp;</div>
         </div>
+        </div>
+        </div>  
             {winBoard()}
+            {settings()}
         </div>
     )
 }
