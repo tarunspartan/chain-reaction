@@ -227,7 +227,7 @@ const Board = () => {
             }
         <div style={{marginTop:'10px'}}>
             <div style={{display:'flex',alignItems:'center'}}>
-            <div id="footer">C H A I N <span id="dot">•</span> R E A C T I O N</div>
+            <div id="footer">C H A I N <span id="dot">•</span> R E A C T I <span id="face"><span id="one"></span><span id="two"></span><span id="three"></span></span> N</div>
             <div id="settingsIcon" onClick={() => settingsHandler()}>&#x2699;</div>
         </div>
         </div>
