@@ -103,8 +103,9 @@
     font-family: Arial, Helvetica, sans-serif;
 }
 
-#shsf{
+#footer{
     font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+    color: #262626;
 }
 
 .replay{
@@ -120,9 +121,10 @@
 }
 
 .restart{
+    font-size: 15px;
     position: relative;
     border: 2px solid #262626;
-    padding: 7px;
+    padding: 5px;
     margin: 10px;
     box-shadow: 1px 1px 0px rgba(38, 38, 38, 0.8), 2px 2px 0px rgba(38, 38, 38, 0.6), 3px 3px 0px rgba(38, 38, 38, 0.4), 4px 4px 0px rgba(38, 38, 38, 0.3), 5px 5px 0px rgba(38, 38, 38, 0.2);
 }
@@ -143,4 +145,30 @@
 
 .share:hover{
     background-color: royalblue;
+}
+
+#settingsIcon{
+    position: absolute;
+    right: 10px;
+    font-size: 20px;
+    cursor: pointer;
+    animation: rotate 30s linear infinite;
+}
+
+@keyframes rotate {
+    from{
+        transform: rotate(0deg);
+        transform-origin: center;
+    }
+    to{
+        transform: rotate(360deg);
+        transform-origin: center;
+    }
+}
+
+#devLine{
+    opacity: 0.4;
+    font-size: 10px;
+    text-transform: none;
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
 }
