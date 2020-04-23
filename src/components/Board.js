@@ -28,6 +28,38 @@ const Board = () => {
         setBoardArray(b)
     },[BoardRows,BoardColumns])
 
+    useEffect(() => {
+        console.log('called')
+        window.addEventListener('beforeinstallprompt', (event) => {
+            console.log('fghj')
+            console.log('👍', 'beforeinstallprompt', event);
+            // Stash the event so it can be triggered later.
+            window.deferredPrompt = event;
+            // Remove the 'hidden' class from the install button container
+            // divInstall.classList.toggle('hidden', false);
+          });
+            let butInstall = document.getElementById('butInstall')
+            butInstall.addEventListener('click', () => {
+                console.log('👍', 'butInstall-clicked');
+                const promptEvent = window.deferredPrompt;
+                if (!promptEvent) {
+                  // The deferred prompt isn't available.
+                  return;
+                }
+                // Show the install prompt.
+                promptEvent.prompt();
+                // Log the result
+                promptEvent.userChoice.then((result) => {
+                  console.log('👍', 'userChoice', result);
+                  // Reset the deferred prompt variable, since
+                  // prompt() can only be called once.
+                  window.deferredPrompt = null;
+                  // Hide the install button.
+                //   divInstall.classList.toggle('hidden', true);
+                });
+              });
+    },[])
+
     const blockClickHandler = (x,y,Player) => {
         flag+=1
         if(Player){
@@ -104,7 +136,7 @@ const Board = () => {
         return (
             <div className='settings' id='settings'>
                 <div style={{textAlign:'center'}}>
-                <div style={{margin:'5px',opacity:'0.9'}}><span style={{color:'black'}}>Settings</span></div>
+                <div style={{margin:'5px',opacity:'0.8'}}><span style={{color:'black',textShadow:'1px 1px 0px grey'}}>Settings</span></div>
                 <div>
                     {<span onClick={() => soundButtonHandler()} role='img' aria-label='sound'>{soundStatus && soundStatus === 'on' ? '🔊' : '🔇'}</span>}
                 </div>
@@ -227,7 +259,8 @@ const Board = () => {
             }
         <div style={{marginTop:'10px'}}>
             <div style={{display:'flex',alignItems:'center'}}>
-            <div id="footer">C H A I N • R E A C T I O N</div>
+            <div id="footer">C H A I N <span id="dot">•</span> R E A C T I O N</div>
+            <button id="butInstall">Install</button>
             <div id="settingsIcon" onClick={() => settingsHandler()}>&#x2699;</div>
         </div>
         </div>

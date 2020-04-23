@@ -106,6 +106,7 @@
 #footer{
     font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
     color: #262626;
+    font-weight: 100;
 }
 
 .replay{
@@ -137,14 +138,10 @@
     font-size: 12px;
     position: relative;
     border: 1px solid #262626;
-    padding: 2px;
+    padding: 1px;
     margin: 5px;
     background-color: #262626;
     color: white;
-}
-
-.share:hover{
-    background-color: royalblue;
 }
 
 #settingsIcon{
@@ -172,3 +169,17 @@
     text-transform: none;
     font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
 }
+
+#dot{
+    animation: blink 1s linear infinite;
+}
+
+@keyframes blink {
+    0%, 49% {
+        color: red;
+      }
+
+      50%, 100% {
+        color:green;
+      }
+  } 
