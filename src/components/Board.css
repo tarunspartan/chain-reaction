@@ -267,12 +267,11 @@
 #tutorial{
     display: none;
     position: fixed;
-    height: 80%;
+    height: 90%;
     width: 90%;
     border-radius: 20px;
     overflow-y: scroll;
     box-shadow: 0px 0px 10px #262626;
-    /* border: 3px solid grey; */
     text-transform: uppercase;
     color:  royalblue;
     font-size: 16px;
@@ -306,5 +305,17 @@ ul{
     position: sticky;
     bottom: -2px;
     padding: 5px 0px;
-    background-color: silver;
+    background-color: skyblue;
+}
+
+#tuturialHeader{
+    color: black;
+    background-color: skyblue;
+    border-bottom: 2px dotted #262626;
+    font-size: 20px;
+    padding: 5px;
+    position: sticky;
+    top: -2px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: bold;
 }

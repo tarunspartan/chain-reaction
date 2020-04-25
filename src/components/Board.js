@@ -127,7 +127,7 @@ const Board = () => {
         return (
             <div id="tutorial">
                 <div style={{textAlign:'center'}}>
-                    <div style={{color:'black',backgroundColor:'silver', borderBottom:'2px dotted gray',fontSize:'20px', padding:'5px', position:'sticky',top:'-2px'}}>Tutorial</div>
+                    <div id="tuturialHeader">Tutorial</div>
                     <br />
                     <span>Chain Reaction is a 2-player Game.&nbsp;Player Red and Green.&nbsp;Player's need to eliminate each other.</span>
                     <br/>
