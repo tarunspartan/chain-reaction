@@ -149,6 +149,7 @@
     font-size: 20px;
     cursor: pointer;
     animation: rotate 30s linear infinite;
+    -webkit-tap-highlight-color: transparent;
 }
 
 @keyframes rotate {
@@ -170,9 +171,13 @@
 }
 
 #dot{
-    font-size: 20px;
+    font-size: 15px;
     display: inline-block;
     line-height: 10px;
+    animation: blink 200ms linear 800ms infinite;
+}
+
+#booyah{
     animation: blink 200ms linear 800ms infinite;
 }
 
@@ -198,24 +203,13 @@
 
 #one , #two{
     position: absolute;
-    height: 27%;
-    width: 27%;
+    height:4px;
+    width: 4px;
     border-radius: 50%;
-    top: 3px;
+    top: 3.5px;
+    background-color: red;
+    line-height: unset;
 }
-
-
-@keyframes blinkEyes {
-    0%, 49% {
-        background-color: red;
-        transform: translateX(-1px)
-      }
-
-      50%, 100% {
-        background-color:green;
-        transform: translateX(0px)
-      }
-  } 
 
 #one{
     right: 2px;
@@ -227,14 +221,34 @@
     animation: blinkEyes 1s linear infinite;
 }
 
+@keyframes blinkEyes {
+    0%, 25% {
+        background-color: red;
+      }
+
+      26%, 49% {
+        background-color: red;
+      }
+
+      50%, 75% {
+        background-color: green;
+      }
+
+      75%, 100% {
+        background-color:green;
+      }
+  } 
+
+
 #three{
     position: absolute;
     height: 40%;
     width: 40%;
     border-radius: 50%;
-    border: 1px solid #262622;
-    top: 8px;
-    left: 4.5px;
+    /* border: 1px solid #262622; */
+    background-color: rgba(158, 158, 158, 0.7);
+    top: 9px;
+    left: 4.9px;
     animation: bounce 1s ease infinite;
 }
 
@@ -248,4 +262,49 @@
     100%{
         transform: scale(0.5);
     }
+}
+
+#tutorial{
+    display: none;
+    position: fixed;
+    height: 80%;
+    width: 90%;
+    border-radius: 20px;
+    overflow-y: scroll;
+    box-shadow: 0px 0px 10px #262626;
+    /* border: 3px solid grey; */
+    text-transform: uppercase;
+    color:  royalblue;
+    font-size: 16px;
+    font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+}
+
+#tutImage{
+    object-fit: cover;
+    box-shadow: 0px 0px 5px grey;
+    width: 150px;
+    height: 150px;
+    margin: 5px;
+}
+
+ul{
+    padding-left: 30px !important;
+}
+
+#tutButtons{
+    border: none;
+    color: white;
+    background-color: #262626;
+    padding: 2px;
+    margin: 2px;
+    text-decoration: none;
+    display: inline-block;
+    text-transform: uppercase;
+}
+
+#divButtons{
+    position: sticky;
+    bottom: -2px;
+    padding: 5px 0px;
+    background-color: silver;
 }

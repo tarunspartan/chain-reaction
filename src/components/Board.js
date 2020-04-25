@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import './Board.css'
 import drop from './drop.mp3'
+import one from './1f-min.jpg'
+import two from './2f-min.jpg'
+import three from './3f-min.jpg'
+import four from './4f-min.jpg'
+import five from './5f-min.jpg'
 let clickable = true
 let flag = 0
+
 // const sound = new Audio(drop)
 // sound.playbackRate = 1.75s
 
@@ -108,12 +114,63 @@ const Board = () => {
                 <div>
                     {<span onClick={() => soundButtonHandler()} role='img' aria-label='sound'>{soundStatus && soundStatus === 'on' ? '🔊' : '🔇'}</span>}
                 </div>
-                <div className='restart' onClick={() => window.location.reload()}>R e s t a r t</div>
-                <div id="devLine">Designed & Built with <span role='img' aria-label="love">💙</span> by TARUN</div>
+                <div className='restart' onClick={() => window.location.reload()} style={{cursor:'pointer'}}>R e s t a r t</div>
+                <div className='restart' onClick={() => openTutorial()} style={{cursor:'pointer'}}>T u t o r i a l</div>
+                <div id="devLine">Designed & Built with <span role='img' aria-label="love">💙</span> by @tarunspartan</div>
                 {navigator.share && <span className='share' onClick={() => share()}>SHARE</span>}
                 </div>
             </div>
         )
+    }
+
+    const tutorial = () => {
+        return (
+            <div id="tutorial">
+                <div style={{textAlign:'center'}}>
+                    <div style={{color:'black',backgroundColor:'silver', borderBottom:'2px dotted gray',fontSize:'20px', padding:'5px', position:'sticky',top:'-2px'}}>Tutorial</div>
+                    <br />
+                    <span>Chain Reaction is a 2-player Game.&nbsp;Player Red and Green.&nbsp;Player's need to eliminate each other.</span>
+                    <br/>
+                    <hr/>
+                    Corner blocks holds only one ball.&nbsp;Adding another ball splits into sides.
+                    <center><img id="tutImage" src={one} alt="image"/></center>
+                    <br/>
+                    <hr/>
+                    Blocks which are sticks to walls can hold upto two balls but,&nbsp;third one makes it splits it into three sides.
+                    <center><img id="tutImage" src={two} alt="image"/></center>
+                    <br/>
+                    <hr/>
+                    Remaining center blocks can hold upto three balls and splits into all four sides by adding one more.
+                    <center><img id="tutImage" src={three} alt="image"/></center>
+                    <br/>
+                    <hr/>
+                    Here comes the fun,&nbsp;Player can eliminate opponent player balls by adding more balls to their block,&nbsp;makes it split and consume their balls.
+                    <center><img id="tutImage" src={four} alt="image"/></center>
+                    ⬇ ⬇ ⬇
+                    <center><img id="tutImage" src={five} alt="image"/></center>
+                    <br/>
+                    <hr/>
+                    <div style={{textAlign:"left",paddingLeft:'5px'}}>
+                    <div>▶The color of Grid shows which player turn it is.</div>
+                    <div>▶Player's can't add balls to blocks which are already consumed by opponent.</div>
+                    <div>▶Whoever first eliminates other player all balls wins(<span id="booyah">BOOYAH!</span>).</div>
+                    </div>
+                    <div id="divButtons">
+                        <button id="tutButtons" onClick={() => closeTutorial()}>This was helpful 👍🏼</button>
+                        {/* {localStorage.getItem('tutorial') === 'on' && <button id="tutButtons" onClick={() => closeTutorialonLS()}>I know how to play, just skip 😏</button>} */}
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    const openTutorial = () => {
+        document.getElementById('tutorial').style.display = 'block'
+    }
+
+    const closeTutorial = () => {
+        document.getElementById('tutorial').style.display = 'none'
+        document.getElementById('settings').style.display = 'none'
     }
 
     const share = () => {
@@ -227,13 +284,14 @@ const Board = () => {
             }
         <div style={{marginTop:'10px'}}>
             <div style={{display:'flex',alignItems:'center'}}>
-            <div id="footer">C H A I N <span id="dot">•</span> R E A C T I <span id="face"><span id="one"></span><span id="two"></span><span id="three"></span></span> N</div>
+            <div id="footer">C H A I N <span id="dot">•</span> R E A C T I <span id="face"><div id="one"></div><div id="two"></div><span id="three"></span></span> N</div>
             <div id="settingsIcon" onClick={() => settingsHandler()}>&#x2699;</div>
         </div>
         </div>
         </div>  
             {winBoard()}
             {settings()}
+            {tutorial()}
         </div>
     )
 }
