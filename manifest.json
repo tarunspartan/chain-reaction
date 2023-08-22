@@ -1,7 +1,7 @@
 {
   "short_name": "Chain Reaction",
   "name": "Chain Reaction",
-  "id":"chainreaction",
+  "id": "chainreaction",
   "description": "A simple fun 2-Player Game",
   "icons": [
     {
@@ -12,7 +12,8 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
       "src": "logo512.png",
@@ -32,5 +33,29 @@
     "client_mode": [
       "navigate-existing, auto"
     ]
-  }
+  },
+  "screenshots": [
+    {
+      "src": "screenshot.png",
+      "sizes": "1280x720",
+      "type": "image/jpg",
+      "platform": "wide"
+    }
+  ],
+  "edge_side_panel": {
+    "preferred_width": 480
+  },
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "browser"
+  ],
+  "handle_links": "preferred",
+  "dir": "ltr",
+  "shortcuts": [
+    {
+      "name": "RESET",
+      "url": "/"
+    }
+  ]
 }
