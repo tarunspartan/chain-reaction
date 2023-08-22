@@ -1,6 +1,7 @@
 {
   "short_name": "Chain Reaction",
   "name": "Chain Reaction",
+  "id":"chainreaction",
   "description": "A simple fun 2-Player Game",
   "icons": [
     {
@@ -22,5 +23,14 @@
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "background_color": "#ffffff",
+  "orientation": "any",
+  "categories": [
+    "games"
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing, auto"
+    ]
+  }
 }
