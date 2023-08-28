@@ -2,7 +2,7 @@
   "name": "chain-reaction",
   "version": "0.4.0",
   "private": true,
-  "homepage": "http://tarunspartan.github.io/chain-reaction",
+  "homepage": "https://tarunspartan.github.io/chain-reaction",
   "dependencies": {
     "@testing-library/jest-dom": "^4.2.4",
     "@testing-library/react": "^9.5.0",
