@@ -1,0 +1,61 @@
+{
+  "short_name": "Chain Reaction PWA",
+  "name": "Chain Reaction PWA",
+  "id": "chainreaction",
+  "description": "Introducing the Ultimate Chain Reaction Experience – Unleash your strategic genius with our addictive Chain Reaction PWA app! Dive into a world of explosive fun where careful planning meets unpredictable chaos. Strategically place your orbs on the grid, trigger mesmerizing chain reactions, and outwit your opponents to claim dominance!",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#070a12",
+  "background_color": "#070a12",
+  "orientation": "any",
+  "categories": [
+    "games"
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing, auto"
+    ]
+  },
+  "screenshots": [
+    {
+      "src": "screenshot.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "platform": "wide"
+    }
+  ],
+  "edge_side_panel": {
+    "preferred_width": 480
+  },
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "browser"
+  ],
+  "handle_links": "preferred",
+  "dir": "ltr",
+  "shortcuts": [
+    {
+      "name": "RESET",
+      "url": "/"
+    }
+  ]
+}
