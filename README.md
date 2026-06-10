@@ -1,68 +1,65 @@
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+# ⚛️ Chain Reaction
 
-## Available Scripts
+A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 to 8 players on one device, installable as a PWA, playable offline.
 
-In the project directory, you can run:
+![Chain Reaction gameplay](docs/gameplay.png)
 
-### `npm start`
+## 📸 Screenshots
 
-Runs the app in the development mode.<br />
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+| Start screen | Win screen | Tutorial |
+| --- | --- | --- |
+| ![Start screen with board size and player count selection](docs/start-screen.png) | ![Win screen showing the winning color](docs/win-screen.png) | ![Tutorial with live board diagrams](docs/tutorial.png) |
 
-The page will reload if you make edits.<br />
-You will also see any lint errors in the console.
+## ✨ Features
 
-### `npm test`
+- **2–8 players** (pass & play) — each player gets one of 8 distinct neon colors
+- **Three board sizes** — Small (6×8), Medium (9×12), or Large (fills your screen)
+- **Animated chain reactions** — explosion shockwaves resolve in waves, orbs tremble when a cell is one orb from critical mass
+- **Elimination play** — lose all your orbs and you're out; your turn is skipped; last player standing wins
+- **Dark neon UI** — the board glow always shows whose turn it is
+- **PWA** — install it on your phone or desktop and play offline
+- Sound effects (toggleable), in-game tutorial with live animated diagrams, `prefers-reduced-motion` support
 
-Launches the test runner in the interactive watch mode.<br />
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## 🎮 How to Play
 
-### `npm run build`
+Players take turns placing orbs in empty cells or cells they already own. Every cell has a **critical mass** — 2 in corners, 3 on edges, 4 in the center. When a cell reaches it, it **explodes**, throwing one orb into each neighbouring cell and **capturing** any opponent orbs there. Captured cells can explode too, setting off massive chain reactions.
 
-Builds the app for production to the `build` folder.<br />
-It correctly bundles React in production mode and optimizes the build for the best performance.
+A player who loses every orb is eliminated. Outlast everyone to win.
 
-The build is minified and the filenames include the hashes.<br />
-Your app is ready to be deployed!
+## 🛠️ Tech Stack
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+| Layer | Choice |
+| --- | --- |
+| Framework | [React 19](https://react.dev/) |
+| Build tool | [Vite 8](https://vitejs.dev/) |
+| Animation | [Motion](https://motion.dev/) (LazyMotion + CSS transforms for the board) |
+| PWA | [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) (Workbox service worker) |
+| Fonts | Bungee + Chakra Petch |
 
-### `npm run eject`
+The chain-reaction engine resolves explosions in simultaneous waves on a copied board, with win-checks mid-chain so endgame cascades terminate cleanly.
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+## 🚀 Getting Started
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+```bash
+npm install
+npm run dev       # dev server with HMR → http://localhost:5173
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+### Other scripts
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+```bash
+npm run build     # production build → dist/
+npm run preview   # serve the production build locally
+npm run deploy    # build + publish dist/ to GitHub Pages
+```
 
-## Learn More
+## 🗺️ Roadmap Ideas
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+- **Online multiplayer** — rooms & websockets for play across devices
+- **vs. CPU** — AI opponents with difficulty levels
+- **More game modes** — timed turns, team play, deathmatch variants
+- **Stats & streaks** — local win tracking per color
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## 🙏 Credits
 
-### Code Splitting
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/code-splitting
-
-### Analyzing the Bundle Size
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size
-
-### Making a Progressive Web App
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app
-
-### Advanced Configuration
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/advanced-configuration
-
-### Deployment
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/deployment
-
-### `npm run build` fails to minify
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify
+Original game concept by Buddy-Matt Entertainment. Built with 💙 by [@tarunspartan](https://github.com/tarunspartan).
