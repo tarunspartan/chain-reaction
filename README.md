@@ -1,24 +1,46 @@
 # ⚛️ Chain Reaction
 
-A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 to 8 players on one device, installable as a PWA, playable offline.
+[![CI/CD](https://github.com/tarunspartan/chain-reaction/actions/workflows/ci.yml/badge.svg)](https://github.com/tarunspartan/chain-reaction/actions/workflows/ci.yml)
+
+A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 to 8 players on one device (or solo against the CPU), installable as a PWA, playable offline.
 
 ![Chain Reaction gameplay](docs/gameplay.png)
 
 ## 📸 Screenshots
 
-| Start screen | Win screen | Tutorial |
-| --- | --- | --- |
-| ![Start screen with board size and player count selection](docs/start-screen.png) | ![Win screen showing the winning color](docs/win-screen.png) | ![Tutorial with live board diagrams](docs/tutorial.png) |
+| Start screen — pick mode, board size and players | vs CPU — REX talks trash |
+| --- | --- |
+| ![Start screen with game mode, board size and player count selection](docs/start-screen.png) | ![vs CPU game with REX speech bubble](docs/mode-cpu.png) |
+
+| Blitz — beat the turn timer | Sudden Death — every fuse shortens |
+| --- | --- |
+| ![Blitz mode with countdown timer bar](docs/mode-blitz.png) | ![Sudden death banner active](docs/mode-sudden.png) |
+
+| Teams — alpha vs omega | Win screen |
+| --- | --- |
+| ![Four-player teams game with grouped player dots](docs/mode-teams.png) | ![Win screen showing the winning color](docs/win-screen.png) |
 
 ## ✨ Features
 
-- **2–8 players** (pass & play) — each player gets one of 8 distinct neon colors
+- **2–8 players** (pass & play) — pick your own color; turn order follows your picks
+- **Five game modes** (see below) including solo play against the CPU
 - **Three board sizes** — Small (6×8), Medium (9×12), or Large (fills your screen)
-- **Animated chain reactions** — explosion shockwaves resolve in waves, orbs tremble when a cell is one orb from critical mass
+- **Animated chain reactions** — explosion shockwaves resolve in accelerating waves with growing screen shake; orbs tremble when a cell is one orb from critical mass
 - **Elimination play** — lose all your orbs and you're out; your turn is skipped; last player standing wins
 - **Dark neon UI** — the board glow always shows whose turn it is
+- **Synthesized sound** — explosions get louder and brighter as chains deepen (Web Audio, zero assets)
 - **PWA** — install it on your phone or desktop and play offline
-- Sound effects (toggleable), in-game tutorial with live animated diagrams, `prefers-reduced-motion` support
+- In-game tutorial with live animated diagrams, `prefers-reduced-motion` support
+
+## 🕹️ Game Modes
+
+| Mode | What changes |
+| --- | --- |
+| **Classic** | Pass & play, last player standing wins |
+| **vs CPU** | You play first; bots take the other colors. Three difficulties, each with its own personality and trash-talk speech bubbles — **BLOB** (easy, lovable chaos), **REX** (medium, sassy), **VEGA** (hard, coldly calculating) |
+| **Blitz** | 5–10 seconds per turn (scales with board size) — run out and a random cell is played for you |
+| **Sudden Death** | Long games go to overtime — when the countdown ends, whoever holds the most orbs wins (ties play on) |
+| **Teams** | 4/6/8 players in two teams (odd picks vs even picks) — eliminate the whole other side |
 
 ## 🎮 How to Play
 
@@ -53,11 +75,19 @@ npm run preview   # serve the production build locally
 npm run deploy    # build + publish dist/ to GitHub Pages
 ```
 
+## 🔁 CI/CD
+
+Every push and pull request runs the [CI/CD workflow](.github/workflows/ci.yml) on GitHub Actions:
+
+- **CI** — checks out the repo, installs dependencies with `npm ci` (Node 22, cached), and runs the production build. Pull requests stop here.
+- **CD** — on pushes to `main`/`master`, the built `dist/` folder is uploaded as a Pages artifact and deployed to **GitHub Pages** via `actions/deploy-pages`.
+
+> One-time setup: in the repo's **Settings → Pages**, set the source to **GitHub Actions**. The `npm run deploy` script (gh-pages branch) still works as a manual fallback.
+
 ## 🗺️ Roadmap Ideas
 
 - **Online multiplayer** — rooms & websockets for play across devices
-- **vs. CPU** — AI opponents with difficulty levels
-- **More game modes** — timed turns, team play, deathmatch variants
+- **Daily Puzzle** — fixed positions to crack in X moves
 - **Stats & streaks** — local win tracking per color
 
 ## 🙏 Credits
