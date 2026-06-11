@@ -3,8 +3,6 @@ import { LazyMotion, domAnimation, m, AnimatePresence } from 'motion/react'
 import './Board.css'
 import drop from './drop.mp3'
 import { playExplosion, playWin, playClick } from './sounds'
-import { criticalMass, neighbours, cloneBoard, findUnstable, applyWave, orbCounts, legalMoves } from './engine'
-import { chooseMove } from './ai'
 
 const PLAYERS = [
     { name: 'CRIMSON', color: '#ff4655' },
@@ -18,18 +16,6 @@ const PLAYERS = [
 ]
 
 const BOARD_SIZES = ['small', 'medium', 'large']
-
-const MODES = [
-    { id: 'classic', label: 'classic' },
-    { id: 'cpu',     label: 'vs cpu' },
-    { id: 'blitz',   label: 'blitz' },
-    { id: 'sudden',  label: 'sudden death' },
-    { id: 'teams',   label: 'teams' },
-]
-
-const DIFFICULTIES = ['easy', 'medium', 'hard']
-
-const TURN_SECONDS = 7
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -66,8 +52,6 @@ const Board = () => {
     const [ BoardRows, setBoardRows ] = useState(0)
     const [ MaxDims, setMaxDims ] = useState({ cols: 0, rows: 0 })
     const [ BoardSize, setBoardSize ] = useState(localStorage.getItem('boardSize') || 'medium')
-    const [ GameMode, setGameMode ] = useState(localStorage.getItem('gameMode') || 'classic')
-    const [ Difficulty, setDifficulty ] = useState(localStorage.getItem('difficulty') || 'medium')
     const [ Players, setPlayers ] = useState([])
     const [ SelectedCount, setSelectedCount ] = useState(null)
     const [ SelectedColors, setSelectedColors ] = useState([])
@@ -76,9 +60,6 @@ const Board = () => {
     const [ Eliminated, setEliminated ] = useState([])
     const [ Winner, setWinner ] = useState(null)
     const [ Exploding, setExploding ] = useState(() => new Set())
-    const [ MovesCount, setMovesCount ] = useState(0)
-    const [ SuddenDeath, setSuddenDeath ] = useState(false)
-    const [ TimeLeft, setTimeLeft ] = useState(TURN_SECONDS)
     const [ showSettings, setShowSettings ] = useState(false)
     const [ showTutorial, setShowTutorial ] = useState(false)
     const [ soundStatus, setSoundStatus ] = useState(localStorage.getItem('sound') || 'on')
@@ -86,13 +67,14 @@ const Board = () => {
 
     const processingRef = useRef(false)
     const movedRef = useRef({})
-    const movesRef = useRef(0)
-    const sdThresholdRef = useRef(999)
 
-    useEffect(() => { localStorage.setItem('sound',soundStatus) },[soundStatus])
-    useEffect(() => { localStorage.setItem('boardSize',BoardSize) },[BoardSize])
-    useEffect(() => { localStorage.setItem('gameMode',GameMode) },[GameMode])
-    useEffect(() => { localStorage.setItem('difficulty',Difficulty) },[Difficulty])
+    useEffect(() => {
+        localStorage.setItem('sound',soundStatus)
+    },[soundStatus])
+
+    useEffect(() => {
+        localStorage.setItem('boardSize',BoardSize)
+    },[BoardSize])
 
     useEffect(() => {
         const id = setInterval(() => setFaceTick(t => t + 1), 900)
@@ -116,26 +98,28 @@ const Board = () => {
         }
     }
 
-    const uiDrop = GameMode === 'sudden' && SuddenDeath ? 1 : 0
+    const criticalMass = (x,y) => {
+        const onRowEdge = x === 0 || x === BoardRows-1
+        const onColEdge = y === 0 || y === BoardColumns-1
+        return onRowEdge && onColEdge ? 2 : onRowEdge || onColEdge ? 3 : 4
+    }
+
+    const neighbours = (x,y) => {
+        return [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([a,b]) => a >= 0 && a < BoardRows && b >= 0 && b < BoardColumns)
+    }
+
+    const orbCounts = (board) => {
+        const counts = {}
+        board.forEach(row => row.forEach(([n,owner]) => {
+            if(owner) counts[owner] = (counts[owner] || 0) + n
+        }))
+        return counts
+    }
 
     // a player is out once they have made a move and own no orbs anymore
     const alivePlayers = (board) => {
         const counts = orbCounts(board)
         return Players.filter(p => !movedRef.current[p.color] || (counts[p.color] || 0) > 0)
-    }
-
-    // classic: last player standing; teams: last team standing
-    const winnerOf = (alive) => {
-        if(alive.length === 0) return null
-        if(GameMode === 'teams'){
-            const teams = new Set(alive.map(p => Players.indexOf(p) % 2))
-            if(teams.size === 1){
-                const t = [...teams][0]
-                return { name: t === 0 ? 'TEAM ALPHA' : 'TEAM OMEGA', color: alive[0].color, members: alive }
-            }
-            return null
-        }
-        return alive.length === 1 ? alive[0] : null
     }
 
     const playSound = (volume = 1) => {
@@ -148,18 +132,8 @@ const Board = () => {
     // gate the synthesized effects behind the sound setting
     const sfx = (fn, ...args) => soundStatus === 'on' && fn(...args)
 
-    const finishGame = (win) => {
-        setShakeAmp(0)
-        setExploding(new Set())
-        setEliminated(Players.filter(p => !(win.members || [win]).includes(p)).map(p => p.color))
-        setWinner(win)
-        sfx(playWin)
-        processingRef.current = false
-    }
-
-    const blockClickHandler = async (x, y, scripted = false) => {
+    const blockClickHandler = async (x,y) => {
         if(processingRef.current || Winner || Players.length === 0) return
-        if(GameMode === 'cpu' && CurrentPlayer !== 0 && !scripted) return // humans can't move for the CPU
         const player = Players[CurrentPlayer]
         const owner = BoardArray[x][y][1]
         if(owner !== null && owner !== player.color) return
@@ -167,43 +141,61 @@ const Board = () => {
         processingRef.current = true
         playSound()
         movedRef.current[player.color] = true
-        movesRef.current += 1
-        setMovesCount(movesRef.current)
 
-        // sudden death: once the move threshold passes, every cell's capacity drops by one
-        let drop = uiDrop
-        if(GameMode === 'sudden' && !SuddenDeath && movesRef.current >= sdThresholdRef.current){
-            drop = 1
-            setSuddenDeath(true)
-            sfx(playExplosion, 5)
+        let board = BoardArray.map(row => row.map(cell => [...cell]))
+        board[x][y] = [board[x][y][0]+1, player.color]
+        setBoardArray(board.map(row => row.map(cell => [...cell])))
+
+        const findUnstable = () => {
+            const unstable = []
+            board.forEach((row,i) => row.forEach((cell,j) => {
+                if(cell[0] >= criticalMass(i,j)) unstable.push([i,j])
+            }))
+            return unstable
         }
 
-        let board = cloneBoard(BoardArray)
-        board[x][y] = [board[x][y][0]+1, player.color]
-        setBoardArray(cloneBoard(board))
-
         // chain waves get faster, louder and shakier the deeper they go
-        let unstable = findUnstable(board, BoardRows, BoardColumns, drop)
+        let unstable = findUnstable()
         let wave = 0
         while(unstable.length > 0){
             setExploding(new Set(unstable.map(([i,j]) => `${i}-${j}`)))
             setShakeAmp(Math.min(0.8 + wave * 0.6, 5))
             await sleep(Math.max(90, 220 - wave * 15))
-            unstable = applyWave(board, unstable, player.color, BoardRows, BoardColumns, drop)
-            setBoardArray(cloneBoard(board))
+            unstable.forEach(([i,j]) => {
+                board[i][j][0] -= criticalMass(i,j)
+                if(board[i][j][0] === 0) board[i][j][1] = null
+            })
+            unstable.forEach(([i,j]) => {
+                neighbours(i,j).forEach(([a,b]) => {
+                    board[a][b][0] += 1
+                    board[a][b][1] = player.color
+                })
+            })
+            setBoardArray(board.map(row => row.map(cell => [...cell])))
             setExploding(new Set())
             sfx(playExplosion, wave)
-            const win = winnerOf(alivePlayers(board))
-            if(win) return finishGame(win)
+            const alive = alivePlayers(board)
+            if(alive.length === 1){
+                setShakeAmp(0)
+                setEliminated(Players.filter(p => p.color !== alive[0].color).map(p => p.color))
+                setWinner(alive[0])
+                sfx(playWin)
+                processingRef.current = false
+                return
+            }
             wave += 1
-            if(wave > 250) break // safety net for saturated boards
+            unstable = findUnstable()
         }
         setShakeAmp(0)
 
         const alive = alivePlayers(board)
         setEliminated(Players.filter(p => !alive.includes(p)).map(p => p.color))
-        const win = winnerOf(alive)
-        if(win) return finishGame(win)
+        if(alive.length === 1){
+            setWinner(alive[0])
+            sfx(playWin)
+            processingRef.current = false
+            return
+        }
         let next = CurrentPlayer
         do {
             next = (next + 1) % Players.length
@@ -211,39 +203,6 @@ const Board = () => {
         setCurrentPlayer(next)
         processingRef.current = false
     }
-
-    // ---- vs CPU: bots take their turns automatically ----
-    useEffect(() => {
-        if(GameMode !== 'cpu' || Winner || Players.length === 0 || CurrentPlayer === 0) return
-        const id = setTimeout(() => {
-            if(processingRef.current) return
-            const move = chooseMove(BoardArray, CurrentPlayer, Players, BoardRows, BoardColumns, Difficulty, uiDrop)
-            if(move) blockClickHandler(move[0], move[1], true)
-        }, 650)
-        return () => clearTimeout(id)
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    },[CurrentPlayer, Players, Winner, GameMode, BoardArray])
-
-    // ---- blitz: countdown per turn, timeout plays a random legal move ----
-    useEffect(() => {
-        if(GameMode !== 'blitz' || Winner || Players.length === 0) return
-        setTimeLeft(TURN_SECONDS)
-        const id = setInterval(() => {
-            if(!processingRef.current) setTimeLeft(t => Math.max(0, t - 1))
-        }, 1000)
-        return () => clearInterval(id)
-    },[CurrentPlayer, Players, Winner, GameMode])
-
-    useEffect(() => {
-        if(GameMode !== 'blitz' || Winner || Players.length === 0 || TimeLeft > 0) return
-        if(processingRef.current) return
-        const moves = legalMoves(BoardArray, Players[CurrentPlayer].color)
-        if(moves.length > 0){
-            const [x, y] = moves[~~(Math.random() * moves.length)]
-            blockClickHandler(x, y, true)
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    },[TimeLeft])
 
     const chooseCount = (count) => {
         sfx(playClick)
@@ -270,12 +229,7 @@ const Board = () => {
         setCurrentPlayer(0)
         setEliminated([])
         setWinner(null)
-        setMovesCount(0)
-        setSuddenDeath(false)
-        setTimeLeft(TURN_SECONDS)
         movedRef.current = {}
-        movesRef.current = 0
-        sdThresholdRef.current = Math.max(16, Math.round(rows * cols * 0.3))
     }
 
     const resetGame = () => {
@@ -288,11 +242,8 @@ const Board = () => {
         setWinner(null)
         setExploding(new Set())
         setShakeAmp(0)
-        setMovesCount(0)
-        setSuddenDeath(false)
         setShowSettings(false)
         movedRef.current = {}
-        movesRef.current = 0
         processingRef.current = false
     }
 
@@ -321,12 +272,6 @@ const Board = () => {
     const facePalette = Players.length > 0 ? Players : PLAYERS
     const faceColor = facePalette[FaceTick % facePalette.length].color
 
-    const countOptions = GameMode === 'teams' ? [4,6,8] : [2,3,4,5,6,7,8]
-
-    const colorHint = GameMode === 'cpu' ? 'your first pick is you — the cpu plays the rest'
-        : GameMode === 'teams' ? 'odd picks are team alpha • even picks are team omega'
-        : 'turn order follows your picks'
-
     const startScreen = () => (
         <m.div className='overlay' key='start'
             initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.25}}>
@@ -334,51 +279,26 @@ const Board = () => {
                 CHAIN<span className='titleAccent'>REACTION</span>
             </m.div>
             {SelectedCount === null ? <>
-                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.2}}>
-                    game mode
-                </m.div>
-                <div className='sizeRow modeRow'>
-                    {MODES.map((mode,idx) => (
-                        <m.button key={mode.id} className={`sizeBtn${GameMode === mode.id ? ' selected' : ''}`}
-                            initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.15+idx*0.04}}
-                            whileHover={{scale:1.06}} whileTap={{scale:0.94}}
-                            onClick={() => {sfx(playClick); setGameMode(mode.id)}}>
-                            {mode.label}
-                        </m.button>
-                    ))}
-                </div>
-                {GameMode === 'cpu' &&
-                    <div className='sizeRow'>
-                        {DIFFICULTIES.map(d => (
-                            <m.button key={d} className={`sizeBtn diffBtn${Difficulty === d ? ' selected' : ''}`}
-                                initial={{opacity:0}} animate={{opacity:1}}
-                                whileHover={{scale:1.06}} whileTap={{scale:0.94}}
-                                onClick={() => {sfx(playClick); setDifficulty(d)}}>
-                                {d}
-                            </m.button>
-                        ))}
-                    </div>
-                }
-                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.3}}>
+                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.25}}>
                     board size
                 </m.div>
                 <div className='sizeRow'>
                     {BOARD_SIZES.map((s,idx) => (
                         <m.button key={s} className={`sizeBtn${BoardSize === s ? ' selected' : ''}`}
-                            initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.25+idx*0.05}}
+                            initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.2+idx*0.05}}
                             whileHover={{scale:1.06}} whileTap={{scale:0.94}}
                             onClick={() => {sfx(playClick); setBoardSize(s)}}>
                             {s}
                         </m.button>
                     ))}
                 </div>
-                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.4}}>
+                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.35}}>
                     how many players?
                 </m.div>
                 <div className='countRow'>
-                    {countOptions.map((n,idx) => (
+                    {[2,3,4,5,6,7,8].map((n,idx) => (
                         <m.button key={n} className='countBtn'
-                            initial={{scale:0}} animate={{scale:1}} transition={{...spring, delay:0.4+idx*0.05}}
+                            initial={{scale:0}} animate={{scale:1}} transition={{...spring, delay:0.35+idx*0.05}}
                             whileHover={{scale:1.15}} whileTap={{scale:0.9}}
                             onClick={() => chooseCount(n)}>
                             {n}
@@ -386,11 +306,7 @@ const Board = () => {
                     ))}
                 </div>
                 <m.div className='hint' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.7}}>
-                    {GameMode === 'cpu' ? 'you vs the machine — bots take the other colors'
-                        : GameMode === 'blitz' ? `move within ${TURN_SECONDS} seconds or a random cell is played for you`
-                        : GameMode === 'sudden' ? 'after enough moves every cell gets a shorter fuse'
-                        : GameMode === 'teams' ? 'two teams — eliminate the other side together'
-                        : 'pass & play  •  each player gets a color  •  last one standing wins'}
+                    pass &amp; play&nbsp;&nbsp;•&nbsp;&nbsp;each player gets a color&nbsp;&nbsp;•&nbsp;&nbsp;last one standing wins
                 </m.div>
             </> : <>
                 <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.1}}>
@@ -411,7 +327,7 @@ const Board = () => {
                     })}
                 </div>
                 <m.div className='hint' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.35}}>
-                    {colorHint}
+                    turn order follows your picks
                 </m.div>
                 <div className='startRow'>
                     <m.button className='sizeBtn'
@@ -442,11 +358,6 @@ const Board = () => {
                 initial={{y:30,opacity:0}} animate={{y:0,opacity:1}} transition={{...spring, delay:0.25}}>
                 {Winner.name} WINS
             </m.div>
-            {Winner.members &&
-                <m.div className='winTeamDots' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.4}}>
-                    {Winner.members.map(p => <span key={p.color} className='playerDot' style={{'--c':p.color}} />)}
-                </m.div>
-            }
             <m.button className='neonBtn' style={{'--c':Winner.color}}
                 initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.45}}
                 whileHover={{scale:1.08}} whileTap={{scale:0.92}}
@@ -527,15 +438,6 @@ const Board = () => {
                         ]} />
                     </div>
                     <hr/>
-                    <p><b>Game modes:</b></p>
-                    <ul className='tutRules'>
-                        <li><b>Classic</b> — pass &amp; play, last player standing wins.</li>
-                        <li><b>vs CPU</b> — you play first; bots (easy / medium / hard) take the other colors.</li>
-                        <li><b>Blitz</b> — {TURN_SECONDS} seconds per turn; run out and a random cell is played for you.</li>
-                        <li><b>Sudden Death</b> — after enough moves, every cell's fuse shortens by one orb.</li>
-                        <li><b>Teams</b> — odd picks vs even picks; eliminate the whole other team.</li>
-                    </ul>
-                    <hr/>
                     <ul className='tutRules'>
                         <li>The glow of the board shows whose turn it is.</li>
                         <li>The dots below the board show every player — the glowing one is up next.</li>
@@ -551,16 +453,6 @@ const Board = () => {
         </m.div>
     )
 
-    const renderDot = (p) => {
-        const i = Players.indexOf(p)
-        return (
-            <span key={p.color}
-                className={`playerDot${i === CurrentPlayer && !Winner ? ' active' : ''}${Eliminated.includes(p.color) ? ' dead' : ''}`}
-                style={{'--c':p.color}}
-            />
-        )
-    }
-
     return (
         <div className='container' style={{'--turn':currentColor}}>
             <div className='ambientGlow' />
@@ -574,7 +466,7 @@ const Board = () => {
                             const count = col[0]
                             const ownerColor = col[1]
                             const n = Math.min(count,3)
-                            const critical = count > 0 && count === criticalMass(rowindex,colindex,BoardRows,BoardColumns,uiDrop)-1
+                            const critical = count > 0 && count === criticalMass(rowindex,colindex)-1
                             return <div key={cellKey}
                                     className='block'
                                     onClick={() => blockClickHandler(rowindex,colindex)}>
@@ -593,23 +485,14 @@ const Board = () => {
                 }
                 </div>
                 <div className='hud'>
-                    {GameMode === 'blitz' && Players.length > 0 && !Winner &&
-                        <div className='timerWrap'>
-                            <div className='timerBar' style={{width:`${(TimeLeft/TURN_SECONDS)*100}%`, backgroundColor:currentColor}} />
-                        </div>
-                    }
-                    {GameMode === 'sudden' && Players.length > 0 && !Winner &&
-                        (SuddenDeath
-                            ? <div className='sdLabel active'><span role='img' aria-label='skull'>☠</span> SUDDEN DEATH <span role='img' aria-label='skull'>☠</span></div>
-                            : <div className='sdLabel'>sudden death in {Math.max(0, sdThresholdRef.current - MovesCount)} moves</div>)
-                    }
                     {Players.length > 0 &&
                         <div className='playerStatus'>
-                            {GameMode === 'teams' ? <>
-                                {Players.filter((_,i) => i % 2 === 0).map(renderDot)}
-                                <span className='vsLabel'>vs</span>
-                                {Players.filter((_,i) => i % 2 === 1).map(renderDot)}
-                            </> : Players.map(renderDot)}
+                            {Players.map((p,i) => (
+                                <span key={p.color}
+                                    className={`playerDot${i === CurrentPlayer && !Winner ? ' active' : ''}${Eliminated.includes(p.color) ? ' dead' : ''}`}
+                                    style={{'--c':p.color}}
+                                />
+                            ))}
                         </div>
                     }
                     <div className='bottomBar'>

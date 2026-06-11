@@ -23,8 +23,8 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff",
+  "theme_color": "#070a12",
+  "background_color": "#070a12",
   "orientation": "any",
   "categories": [
     "games"
@@ -38,7 +38,7 @@
     {
       "src": "screenshot.png",
       "sizes": "1280x720",
-      "type": "image/jpg",
+      "type": "image/png",
       "platform": "wide"
     }
   ],
