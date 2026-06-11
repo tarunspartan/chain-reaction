@@ -2,7 +2,9 @@ import React, { useEffect, useState, useRef } from 'react'
 import { LazyMotion, domAnimation, m, AnimatePresence } from 'motion/react'
 import './Board.css'
 import drop from './drop.mp3'
-import { playExplosion, playWin, playClick } from './sounds'
+import { playExplosion, playWin, playClick, playDenied } from './sounds'
+import { criticalMass, neighbours, cloneBoard, findUnstable, applyWave, orbCounts, legalMoves } from './engine'
+import { chooseMove, PERSONAS, speak } from './ai'
 
 const PLAYERS = [
     { name: 'CRIMSON', color: '#ff4655' },
@@ -16,6 +18,18 @@ const PLAYERS = [
 ]
 
 const BOARD_SIZES = ['small', 'medium', 'large']
+
+const MODES = [
+    { id: 'classic', label: 'classic' },
+    { id: 'cpu',     label: 'vs cpu' },
+    { id: 'blitz',   label: 'blitz' },
+    { id: 'sudden',  label: 'sudden death' },
+    { id: 'teams',   label: 'teams' },
+]
+
+const DIFFICULTIES = ['easy', 'medium', 'hard']
+
+const TURN_SECONDS = { small: 5, medium: 7, large: 10 }
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -52,6 +66,8 @@ const Board = () => {
     const [ BoardRows, setBoardRows ] = useState(0)
     const [ MaxDims, setMaxDims ] = useState({ cols: 0, rows: 0 })
     const [ BoardSize, setBoardSize ] = useState(localStorage.getItem('boardSize') || 'medium')
+    const [ GameMode, setGameMode ] = useState(localStorage.getItem('gameMode') || 'classic')
+    const [ Difficulty, setDifficulty ] = useState(localStorage.getItem('difficulty') || 'medium')
     const [ Players, setPlayers ] = useState([])
     const [ SelectedCount, setSelectedCount ] = useState(null)
     const [ SelectedColors, setSelectedColors ] = useState([])
@@ -60,30 +76,47 @@ const Board = () => {
     const [ Eliminated, setEliminated ] = useState([])
     const [ Winner, setWinner ] = useState(null)
     const [ Exploding, setExploding ] = useState(() => new Set())
+    const [ MovesCount, setMovesCount ] = useState(0)
+    const [ SuddenDeath, setSuddenDeath ] = useState(false)
+    const [ OvertimeLeft, setOvertimeLeft ] = useState(0)
+    const [ TimeLeft, setTimeLeft ] = useState(7)
     const [ showSettings, setShowSettings ] = useState(false)
     const [ showTutorial, setShowTutorial ] = useState(false)
     const [ soundStatus, setSoundStatus ] = useState(localStorage.getItem('sound') || 'on')
     const [ FaceTick, setFaceTick ] = useState(0)
+    const [ Speech, setSpeech ] = useState(null)
+    const [ Toast, setToast ] = useState(null)
+    const [ InvalidCell, setInvalidCell ] = useState(null)
 
     const processingRef = useRef(false)
     const movedRef = useRef({})
+    const movesRef = useRef(0)
+    const sdThresholdRef = useRef(999)
+    const speechTimerRef = useRef(null)
+    const eliminatedRef = useRef([])
+    const overtimeRef = useRef(0)
+    const turnSecsRef = useRef(7)
+    const toastTimerRef = useRef(null)
+    const invalidTimerRef = useRef(null)
 
-    useEffect(() => {
-        localStorage.setItem('sound',soundStatus)
-    },[soundStatus])
-
-    useEffect(() => {
-        localStorage.setItem('boardSize',BoardSize)
-    },[BoardSize])
+    useEffect(() => { localStorage.setItem('sound',soundStatus) },[soundStatus])
+    useEffect(() => { localStorage.setItem('boardSize',BoardSize) },[BoardSize])
+    useEffect(() => { localStorage.setItem('gameMode',GameMode) },[GameMode])
+    useEffect(() => { localStorage.setItem('difficulty',Difficulty) },[Difficulty])
 
     useEffect(() => {
         const id = setInterval(() => setFaceTick(t => t + 1), 900)
         return () => clearInterval(id)
     },[])
 
+    // first-ever visit: open the tutorial so new players learn the rules
+    useEffect(() => {
+        if(!localStorage.getItem('tutorialSeen')) setShowTutorial(true)
+    },[])
+
     useEffect(() => {
         const cols = Math.max(4, ~~((window.innerWidth - 16)/50))
-        const rows = Math.max(5, ~~((window.innerHeight - 110)/50))
+        const rows = Math.max(5, ~~((window.innerHeight - 150)/50))
         setMaxDims({ cols, rows })
         setBoardColumns(cols)
         setBoardRows(rows)
@@ -98,28 +131,24 @@ const Board = () => {
         }
     }
 
-    const criticalMass = (x,y) => {
-        const onRowEdge = x === 0 || x === BoardRows-1
-        const onColEdge = y === 0 || y === BoardColumns-1
-        return onRowEdge && onColEdge ? 2 : onRowEdge || onColEdge ? 3 : 4
-    }
-
-    const neighbours = (x,y) => {
-        return [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([a,b]) => a >= 0 && a < BoardRows && b >= 0 && b < BoardColumns)
-    }
-
-    const orbCounts = (board) => {
-        const counts = {}
-        board.forEach(row => row.forEach(([n,owner]) => {
-            if(owner) counts[owner] = (counts[owner] || 0) + n
-        }))
-        return counts
-    }
-
     // a player is out once they have made a move and own no orbs anymore
     const alivePlayers = (board) => {
         const counts = orbCounts(board)
         return Players.filter(p => !movedRef.current[p.color] || (counts[p.color] || 0) > 0)
+    }
+
+    // classic: last player standing; teams: last team standing
+    const winnerOf = (alive) => {
+        if(alive.length === 0) return null
+        if(GameMode === 'teams'){
+            const teams = new Set(alive.map(p => Players.indexOf(p) % 2))
+            if(teams.size === 1){
+                const t = [...teams][0]
+                return { name: t === 0 ? 'TEAM ALPHA' : 'TEAM OMEGA', color: alive[0].color, members: alive }
+            }
+            return null
+        }
+        return alive.length === 1 ? alive[0] : null
     }
 
     const playSound = (volume = 1) => {
@@ -132,69 +161,126 @@ const Board = () => {
     // gate the synthesized effects behind the sound setting
     const sfx = (fn, ...args) => soundStatus === 'on' && fn(...args)
 
-    const blockClickHandler = async (x,y) => {
+    const showToast = (text, color) => {
+        setToast({ text, color })
+        clearTimeout(toastTimerRef.current)
+        toastTimerRef.current = setTimeout(() => setToast(null), 2600)
+    }
+
+    const closeTutorial = () => {
+        localStorage.setItem('tutorialSeen', '1')
+        setShowTutorial(false)
+    }
+
+    // CPU speech bubble — `chance` lets frequent events stay occasional
+    const botSay = (event, color, chance = 1) => {
+        if(GameMode !== 'cpu') return
+        if(Math.random() > chance) return
+        const text = speak(Difficulty, event)
+        if(!text) return
+        setSpeech({ text, color, name: PERSONAS[Difficulty].name })
+        clearTimeout(speechTimerRef.current)
+        speechTimerRef.current = setTimeout(() => setSpeech(null), 3200)
+    }
+
+    const finishGame = (win) => {
+        setShakeAmp(0)
+        setExploding(new Set())
+        const dead = Players.filter(p => !(win.members || [win]).includes(p)).map(p => p.color)
+        eliminatedRef.current = dead
+        setEliminated(dead)
+        setWinner(win)
+        sfx(playWin)
+        if(GameMode === 'cpu' && Players.length > 1){
+            const humanWon = (win.members || [win]).includes(Players[0])
+            botSay(humanWon ? 'lose' : 'win', humanWon ? Players[1].color : win.color)
+        }
+        processingRef.current = false
+    }
+
+    const blockClickHandler = async (x, y, scripted = false) => {
         if(processingRef.current || Winner || Players.length === 0) return
+        if(GameMode === 'cpu' && CurrentPlayer !== 0 && !scripted) return // humans can't move for the CPU
         const player = Players[CurrentPlayer]
         const owner = BoardArray[x][y][1]
-        if(owner !== null && owner !== player.color) return
+        if(owner !== null && owner !== player.color){
+            // new players click enemy cells — show why nothing happened
+            if(!scripted){
+                setInvalidCell(`${x}-${y}`)
+                sfx(playDenied)
+                clearTimeout(invalidTimerRef.current)
+                invalidTimerRef.current = setTimeout(() => setInvalidCell(null), 380)
+            }
+            return
+        }
 
         processingRef.current = true
         playSound()
         movedRef.current[player.color] = true
+        movesRef.current += 1
+        setMovesCount(movesRef.current)
 
-        let board = BoardArray.map(row => row.map(cell => [...cell]))
+        let board = cloneBoard(BoardArray)
         board[x][y] = [board[x][y][0]+1, player.color]
-        setBoardArray(board.map(row => row.map(cell => [...cell])))
-
-        const findUnstable = () => {
-            const unstable = []
-            board.forEach((row,i) => row.forEach((cell,j) => {
-                if(cell[0] >= criticalMass(i,j)) unstable.push([i,j])
-            }))
-            return unstable
-        }
+        setBoardArray(cloneBoard(board))
 
         // chain waves get faster, louder and shakier the deeper they go
-        let unstable = findUnstable()
+        let unstable = findUnstable(board, BoardRows, BoardColumns)
         let wave = 0
         while(unstable.length > 0){
             setExploding(new Set(unstable.map(([i,j]) => `${i}-${j}`)))
             setShakeAmp(Math.min(0.8 + wave * 0.6, 5))
             await sleep(Math.max(90, 220 - wave * 15))
-            unstable.forEach(([i,j]) => {
-                board[i][j][0] -= criticalMass(i,j)
-                if(board[i][j][0] === 0) board[i][j][1] = null
-            })
-            unstable.forEach(([i,j]) => {
-                neighbours(i,j).forEach(([a,b]) => {
-                    board[a][b][0] += 1
-                    board[a][b][1] = player.color
-                })
-            })
-            setBoardArray(board.map(row => row.map(cell => [...cell])))
+            unstable = applyWave(board, unstable, player.color, BoardRows, BoardColumns)
+            setBoardArray(cloneBoard(board))
             setExploding(new Set())
             sfx(playExplosion, wave)
-            const alive = alivePlayers(board)
-            if(alive.length === 1){
-                setShakeAmp(0)
-                setEliminated(Players.filter(p => p.color !== alive[0].color).map(p => p.color))
-                setWinner(alive[0])
-                sfx(playWin)
-                processingRef.current = false
-                return
-            }
+            const win = winnerOf(alivePlayers(board))
+            if(win) return finishGame(win)
             wave += 1
-            unstable = findUnstable()
+            if(wave > 250) break // safety net for saturated boards
         }
         setShakeAmp(0)
 
         const alive = alivePlayers(board)
-        setEliminated(Players.filter(p => !alive.includes(p)).map(p => p.color))
-        if(alive.length === 1){
-            setWinner(alive[0])
-            sfx(playWin)
-            processingRef.current = false
-            return
+        const deadColors = Players.filter(p => !alive.includes(p)).map(p => p.color)
+        const newlyDead = deadColors.filter(c => !eliminatedRef.current.includes(c))
+        eliminatedRef.current = deadColors
+        setEliminated(deadColors)
+        const win = winnerOf(alive)
+        if(win) return finishGame(win)
+
+        if(GameMode === 'cpu'){
+            const botDied = newlyDead.find(c => c !== Players[0].color)
+            const isBotMove = CurrentPlayer !== 0
+            if(newlyDead.includes(Players[0].color)) showToast('YOU ARE OUT!', Players[0].color)
+            else if(botDied) botSay('eliminated', botDied)
+            else if(isBotMove && wave >= 3) botSay('bigChain', player.color)
+            else if(isBotMove) botSay('move', player.color, 0.25)
+            else if(wave >= 3) botSay('humanBig', (alive.find(p => p !== Players[0]) || player).color, 0.9)
+        } else if(newlyDead.length > 0){
+            const out = Players.find(p => p.color === newlyDead[0])
+            if(out) showToast(`${out.name} IS OUT!`, out.color)
+        }
+
+        // sudden death: long games go to overtime — when it runs out, most orbs wins
+        if(GameMode === 'sudden'){
+            if(!SuddenDeath && movesRef.current >= sdThresholdRef.current){
+                setSuddenDeath(true)
+                overtimeRef.current = Players.length * 2
+                setOvertimeLeft(overtimeRef.current)
+                sfx(playExplosion, 5)
+            } else if(SuddenDeath){
+                overtimeRef.current = Math.max(0, overtimeRef.current - 1)
+                setOvertimeLeft(overtimeRef.current)
+                if(overtimeRef.current === 0){
+                    const counts = orbCounts(board)
+                    const best = Math.max(...alive.map(p => counts[p.color] || 0))
+                    const leaders = alive.filter(p => (counts[p.color] || 0) === best)
+                    if(leaders.length === 1) return finishGame(leaders[0])
+                    // tied — play on until someone takes the lead
+                }
+            }
         }
         let next = CurrentPlayer
         do {
@@ -204,10 +290,43 @@ const Board = () => {
         processingRef.current = false
     }
 
+    // ---- vs CPU: bots take their turns automatically ----
+    useEffect(() => {
+        if(GameMode !== 'cpu' || Winner || Players.length === 0 || CurrentPlayer === 0) return
+        const id = setTimeout(() => {
+            if(processingRef.current) return
+            const move = chooseMove(BoardArray, CurrentPlayer, Players, BoardRows, BoardColumns, Difficulty)
+            if(move) blockClickHandler(move[0], move[1], true)
+        }, 650)
+        return () => clearTimeout(id)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    },[CurrentPlayer, Players, Winner, GameMode, BoardArray])
+
+    // ---- blitz: countdown per turn, timeout plays a random legal move ----
+    useEffect(() => {
+        if(GameMode !== 'blitz' || Winner || Players.length === 0) return
+        setTimeLeft(turnSecsRef.current)
+        const id = setInterval(() => {
+            if(!processingRef.current) setTimeLeft(t => Math.max(0, t - 1))
+        }, 1000)
+        return () => clearInterval(id)
+    },[CurrentPlayer, Players, Winner, GameMode])
+
+    useEffect(() => {
+        if(GameMode !== 'blitz' || Winner || Players.length === 0 || TimeLeft > 0) return
+        if(processingRef.current) return
+        const moves = legalMoves(BoardArray, Players[CurrentPlayer].color)
+        if(moves.length > 0){
+            const [x, y] = moves[~~(Math.random() * moves.length)]
+            blockClickHandler(x, y, true)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    },[TimeLeft])
+
     const chooseCount = (count) => {
         sfx(playClick)
         setSelectedCount(count)
-        setSelectedColors(PLAYERS.slice(0,count))
+        setSelectedColors([]) // start empty — players pick their own colors
     }
 
     const toggleColor = (p) => {
@@ -229,7 +348,27 @@ const Board = () => {
         setCurrentPlayer(0)
         setEliminated([])
         setWinner(null)
+        setMovesCount(0)
+        setSuddenDeath(false)
+        setOvertimeLeft(0)
+        turnSecsRef.current = TURN_SECONDS[BoardSize] || 7
+        setTimeLeft(turnSecsRef.current)
         movedRef.current = {}
+        movesRef.current = 0
+        eliminatedRef.current = []
+        overtimeRef.current = 0
+        sdThresholdRef.current = Math.max(20, Math.round(rows * cols * 0.4))
+        if(GameMode === 'cpu' && SelectedColors.length > 1){
+            const botColor = SelectedColors[1].color
+            setTimeout(() => {
+                const text = speak(Difficulty, 'start')
+                if(text){
+                    setSpeech({ text, color: botColor, name: PERSONAS[Difficulty].name })
+                    clearTimeout(speechTimerRef.current)
+                    speechTimerRef.current = setTimeout(() => setSpeech(null), 3200)
+                }
+            }, 900)
+        }
     }
 
     const resetGame = () => {
@@ -242,8 +381,18 @@ const Board = () => {
         setWinner(null)
         setExploding(new Set())
         setShakeAmp(0)
+        setMovesCount(0)
+        setSuddenDeath(false)
+        setOvertimeLeft(0)
         setShowSettings(false)
+        setSpeech(null)
+        setToast(null)
+        clearTimeout(speechTimerRef.current)
+        clearTimeout(toastTimerRef.current)
         movedRef.current = {}
+        movesRef.current = 0
+        eliminatedRef.current = []
+        overtimeRef.current = 0
         processingRef.current = false
     }
 
@@ -255,15 +404,19 @@ const Board = () => {
     }
 
     const share = () => {
+        const data = {
+            title: 'Chain Reaction',
+            text: 'Check out this new Fun Multiplayer Game called Chain Reaction 😮',
+            url: 'https://tarunspartan.github.io/chain-reaction',
+        }
         if (navigator.share) {
-            navigator.share({
-              title: 'Chain Reaction',
-              text: 'Check out this new Fun Multiplayer Game called Chain Reaction 😮',
-              url: 'https://tarunspartan.github.io/chain-reaction',
-            })
-              .then(() => console.log('Successful share'))
-              .catch((error) => console.log('Error sharing', error));
-          }
+            navigator.share(data).catch((error) => console.log('Error sharing', error))
+        } else if (navigator.clipboard) {
+            // desktop browsers without the Web Share API — copy the link instead
+            navigator.clipboard.writeText(data.url)
+                .then(() => showToast('LINK COPIED!', '#4da6ff'))
+                .catch(() => showToast('COPY FAILED', '#ff4655'))
+        }
     }
 
     const currentColor = Players.length > 0 ? Players[CurrentPlayer].color : '#3a4566'
@@ -272,6 +425,12 @@ const Board = () => {
     const facePalette = Players.length > 0 ? Players : PLAYERS
     const faceColor = facePalette[FaceTick % facePalette.length].color
 
+    const countOptions = GameMode === 'teams' ? [4,6,8] : [2,3,4,5,6,7,8]
+
+    const colorHint = GameMode === 'cpu' ? 'your first pick is you — the cpu plays the rest'
+        : GameMode === 'teams' ? 'odd picks are team alpha • even picks are team omega'
+        : 'turn order follows your picks'
+
     const startScreen = () => (
         <m.div className='overlay' key='start'
             initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.25}}>
@@ -279,26 +438,51 @@ const Board = () => {
                 CHAIN<span className='titleAccent'>REACTION</span>
             </m.div>
             {SelectedCount === null ? <>
-                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.25}}>
+                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.2}}>
+                    game mode
+                </m.div>
+                <div className='sizeRow modeRow'>
+                    {MODES.map((mode,idx) => (
+                        <m.button key={mode.id} className={`sizeBtn${GameMode === mode.id ? ' selected' : ''}`}
+                            initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.15+idx*0.04}}
+                            whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                            onClick={() => {sfx(playClick); setGameMode(mode.id)}}>
+                            {mode.label}
+                        </m.button>
+                    ))}
+                </div>
+                {GameMode === 'cpu' &&
+                    <div className='sizeRow'>
+                        {DIFFICULTIES.map(d => (
+                            <m.button key={d} className={`sizeBtn diffBtn${Difficulty === d ? ' selected' : ''}`}
+                                initial={{opacity:0}} animate={{opacity:1}}
+                                whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                                onClick={() => {sfx(playClick); setDifficulty(d)}}>
+                                {d}
+                            </m.button>
+                        ))}
+                    </div>
+                }
+                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.3}}>
                     board size
                 </m.div>
                 <div className='sizeRow'>
                     {BOARD_SIZES.map((s,idx) => (
                         <m.button key={s} className={`sizeBtn${BoardSize === s ? ' selected' : ''}`}
-                            initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.2+idx*0.05}}
+                            initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.25+idx*0.05}}
                             whileHover={{scale:1.06}} whileTap={{scale:0.94}}
                             onClick={() => {sfx(playClick); setBoardSize(s)}}>
                             {s}
                         </m.button>
                     ))}
                 </div>
-                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.35}}>
+                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.4}}>
                     how many players?
                 </m.div>
                 <div className='countRow'>
-                    {[2,3,4,5,6,7,8].map((n,idx) => (
+                    {countOptions.map((n,idx) => (
                         <m.button key={n} className='countBtn'
-                            initial={{scale:0}} animate={{scale:1}} transition={{...spring, delay:0.35+idx*0.05}}
+                            initial={{scale:0}} animate={{scale:1}} transition={{...spring, delay:0.4+idx*0.05}}
                             whileHover={{scale:1.15}} whileTap={{scale:0.9}}
                             onClick={() => chooseCount(n)}>
                             {n}
@@ -306,8 +490,18 @@ const Board = () => {
                     ))}
                 </div>
                 <m.div className='hint' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.7}}>
-                    pass &amp; play&nbsp;&nbsp;•&nbsp;&nbsp;each player gets a color&nbsp;&nbsp;•&nbsp;&nbsp;last one standing wins
+                    {GameMode === 'cpu' ? 'you vs the machine — bots take the other colors'
+                        : GameMode === 'blitz' ? `move within ${TURN_SECONDS[BoardSize] || 7} seconds or a random cell is played for you`
+                        : GameMode === 'sudden' ? 'long games go to overtime — most orbs wins'
+                        : GameMode === 'teams' ? 'two teams — eliminate the other side together'
+                        : 'pass & play  •  each player gets a color  •  last one standing wins'}
                 </m.div>
+                <m.button className='howToBtn'
+                    initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.8}}
+                    whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                    onClick={() => {sfx(playClick); setShowTutorial(true)}}>
+                    <span role='img' aria-label='question'>❓</span>&nbsp;how to play
+                </m.button>
             </> : <>
                 <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.1}}>
                     pick your colors&nbsp;&nbsp;—&nbsp;&nbsp;{SelectedColors.length} / {SelectedCount}
@@ -327,7 +521,7 @@ const Board = () => {
                     })}
                 </div>
                 <m.div className='hint' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.35}}>
-                    turn order follows your picks
+                    {colorHint}
                 </m.div>
                 <div className='startRow'>
                     <m.button className='sizeBtn'
@@ -358,6 +552,11 @@ const Board = () => {
                 initial={{y:30,opacity:0}} animate={{y:0,opacity:1}} transition={{...spring, delay:0.25}}>
                 {Winner.name} WINS
             </m.div>
+            {Winner.members &&
+                <m.div className='winTeamDots' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.4}}>
+                    {Winner.members.map(p => <span key={p.color} className='playerDot' style={{'--c':p.color}} />)}
+                </m.div>
+            }
             <m.button className='neonBtn' style={{'--c':Winner.color}}
                 initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.45}}
                 whileHover={{scale:1.08}} whileTap={{scale:0.92}}
@@ -378,16 +577,14 @@ const Board = () => {
                     SOUND&nbsp;<span role='img' aria-label='sound'>{soundStatus === 'on' ? '🔊' : '🔇'}</span>
                 </m.button>
                 <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => resetGame()}>
-                    RESTART
+                    MAIN MENU
                 </m.button>
                 <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => {setShowTutorial(true); setShowSettings(false)}}>
                     TUTORIAL
                 </m.button>
-                {navigator.share && (
-                    <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => share()}>
-                        SHARE
-                    </m.button>
-                )}
+                <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => share()}>
+                    SHARE <span role='img' aria-label='share'>🔗</span>
+                </m.button>
                 <div className='devLine'>Designed &amp; Built with <span role='img' aria-label='love'>💙</span> by @tarunspartan</div>
             </m.div>
         </m.div>
@@ -438,6 +635,30 @@ const Board = () => {
                         ]} />
                     </div>
                     <hr/>
+                    <p><b>Pick your battle — five game modes:</b></p>
+                    <div className='modeCards'>
+                        <div className='modeCard' style={{'--c':'#4da6ff'}}>
+                            <span className='modeCardTitle'><span role='img' aria-label='game'>🎮</span> CLASSIC</span>
+                            Pass &amp; play free-for-all. Take turns on one device — last player standing wins.
+                        </div>
+                        <div className='modeCard' style={{'--c':'#3df56e'}}>
+                            <span className='modeCardTitle'><span role='img' aria-label='robot'>🤖</span> VS CPU</span>
+                            You go first, bots play the rest — and they talk. <b>BLOB</b> (easy) is adorable chaos, <b>REX</b> (medium) trash-talks every move, <b>VEGA</b> (hard) has already simulated your defeat.
+                        </div>
+                        <div className='modeCard' style={{'--c':'#ffd234'}}>
+                            <span className='modeCardTitle'><span role='img' aria-label='lightning'>⚡</span> BLITZ</span>
+                            Beat the timer bar: 5s on small boards, 7s on medium, 10s on large. Run out of time and a random cell is played for you.
+                        </div>
+                        <div className='modeCard' style={{'--c':'#ff4655'}}>
+                            <span className='modeCardTitle'><span role='img' aria-label='skull'>☠</span> SUDDEN DEATH</span>
+                            Long game? Overtime kicks in: a countdown starts, and when it ends whoever holds the most orbs wins. Tied? Next player to take the lead takes the game.
+                        </div>
+                        <div className='modeCard' style={{'--c':'#ff4dd2'}}>
+                            <span className='modeCardTitle'><span role='img' aria-label='handshake'>🤝</span> TEAMS</span>
+                            4, 6 or 8 players in two squads — your odd picks are Team Alpha, even picks are Team Omega. Wipe out the whole other side to win together.
+                        </div>
+                    </div>
+                    <hr/>
                     <ul className='tutRules'>
                         <li>The glow of the board shows whose turn it is.</li>
                         <li>The dots below the board show every player — the glowing one is up next.</li>
@@ -446,17 +667,44 @@ const Board = () => {
                         <li>Last player standing wins. <span className='booyah'>BOOYAH!</span></li>
                     </ul>
                 </div>
-                <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => setShowTutorial(false)}>
+                <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => closeTutorial()}>
                     GOT IT <span role='img' aria-label='thumbs up'>👍🏼</span>
                 </m.button>
             </m.div>
         </m.div>
     )
 
+    const renderDot = (p) => {
+        const i = Players.indexOf(p)
+        const dot = (
+            <span
+                className={`playerDot${i === CurrentPlayer && !Winner ? ' active' : ''}${Eliminated.includes(p.color) ? ' dead' : ''}`}
+                style={{'--c':p.color}}
+            />
+        )
+        // in vs-CPU mode, mark which dot is the human
+        if(GameMode === 'cpu' && i === 0){
+            return <span key={p.color} className='youWrap'>{dot}<span className='youLabel'>you</span></span>
+        }
+        return <span key={p.color}>{dot}</span>
+    }
+
     return (
         <div className='container' style={{'--turn':currentColor}}>
             <div className='ambientGlow' />
             <div className='centerDiv'>
+                <div className='turnBanner' style={{'--c':currentColor}}>
+                    {Players.length > 0 && !Winner && (
+                        GameMode === 'cpu'
+                            ? (CurrentPlayer === 0
+                                ? <>YOUR TURN</>
+                                : <>{PERSONAS[Difficulty].name} IS THINKING<span className='thinkingDots'><i/><i/><i/></span></>)
+                            : <>{Players[CurrentPlayer].name}'S TURN</>
+                    )}
+                    {Players.length > 0 && !Winner && MovesCount === 0 &&
+                        <span className='firstHint'>tap an empty cell to drop an orb</span>
+                    }
+                </div>
                 <div className={ShakeAmp > 0 ? 'boardFrame shaking' : 'boardFrame'} style={{'--amp':`${ShakeAmp}px`}}>
                 {
                     BoardArray.map((row,rowindex) => {
@@ -466,9 +714,9 @@ const Board = () => {
                             const count = col[0]
                             const ownerColor = col[1]
                             const n = Math.min(count,3)
-                            const critical = count > 0 && count === criticalMass(rowindex,colindex)-1
+                            const critical = count > 0 && count === criticalMass(rowindex,colindex,BoardRows,BoardColumns)-1
                             return <div key={cellKey}
-                                    className='block'
+                                    className={InvalidCell === cellKey ? 'block invalid' : 'block'}
                                     onClick={() => blockClickHandler(rowindex,colindex)}>
                                 {Exploding.has(cellKey) && <span className='burst' />}
                                 {count > 0 &&
@@ -485,14 +733,23 @@ const Board = () => {
                 }
                 </div>
                 <div className='hud'>
+                    {GameMode === 'blitz' && Players.length > 0 && !Winner &&
+                        <div className='timerWrap'>
+                            <div className='timerBar' style={{width:`${(TimeLeft/turnSecsRef.current)*100}%`, backgroundColor:currentColor}} />
+                        </div>
+                    }
+                    {GameMode === 'sudden' && Players.length > 0 && !Winner &&
+                        (SuddenDeath
+                            ? <div className='sdLabel active'><span role='img' aria-label='skull'>☠</span> SUDDEN DEATH — {OvertimeLeft > 0 ? `most orbs wins in ${OvertimeLeft} moves` : 'tied! next lead wins'} <span role='img' aria-label='skull'>☠</span></div>
+                            : <div className='sdLabel'>sudden death in {Math.max(0, sdThresholdRef.current - MovesCount)} moves</div>)
+                    }
                     {Players.length > 0 &&
                         <div className='playerStatus'>
-                            {Players.map((p,i) => (
-                                <span key={p.color}
-                                    className={`playerDot${i === CurrentPlayer && !Winner ? ' active' : ''}${Eliminated.includes(p.color) ? ' dead' : ''}`}
-                                    style={{'--c':p.color}}
-                                />
-                            ))}
+                            {GameMode === 'teams' ? <>
+                                {Players.filter((_,i) => i % 2 === 0).map(renderDot)}
+                                <span className='vsLabel'>vs</span>
+                                {Players.filter((_,i) => i % 2 === 1).map(renderDot)}
+                            </> : Players.map(renderDot)}
                         </div>
                     }
                     <div className='bottomBar'>
@@ -507,6 +764,25 @@ const Board = () => {
                     {Winner && winScreen()}
                     {showSettings && settingsScreen()}
                     {showTutorial && tutorialScreen()}
+                </AnimatePresence>
+                <AnimatePresence>
+                    {Speech &&
+                        <m.div className='speechBubble' key={Speech.text} style={{'--c':Speech.color}}
+                            initial={{opacity:0, y:14, scale:0.9}} animate={{opacity:1, y:0, scale:1}}
+                            exit={{opacity:0, y:-10}} transition={spring}>
+                            <span className='speechName'>{Speech.name}</span>
+                            {Speech.text}
+                        </m.div>
+                    }
+                </AnimatePresence>
+                <AnimatePresence>
+                    {Toast &&
+                        <m.div className='speechBubble toast' key={Toast.text} style={{'--c':Toast.color}}
+                            initial={{opacity:0, y:14, scale:0.9}} animate={{opacity:1, y:0, scale:1}}
+                            exit={{opacity:0, y:-10}} transition={spring}>
+                            {Toast.text}
+                        </m.div>
+                    }
                 </AnimatePresence>
             </LazyMotion>
         </div>

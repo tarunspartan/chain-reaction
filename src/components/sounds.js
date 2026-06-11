@@ -60,6 +60,21 @@ export const playWin = () => {
     })
 }
 
+// low buzz for an illegal move
+export const playDenied = () => {
+    const c = ac()
+    const t = c.currentTime
+    const osc = c.createOscillator()
+    osc.type = 'square'
+    osc.frequency.setValueAtTime(140, t)
+    osc.frequency.linearRampToValueAtTime(90, t + 0.09)
+    const g = c.createGain()
+    g.gain.setValueAtTime(0.07, t)
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.1)
+    osc.connect(g); g.connect(c.destination)
+    osc.start(t); osc.stop(t + 0.11)
+}
+
 // soft UI blip for menu buttons
 export const playClick = () => {
     const c = ac()
