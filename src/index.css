@@ -1,4 +1,18 @@
+*{
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   padding: 0;
+  background-color: #070a12;
+  color: #e8ecf5;
+  font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection{
+  background: #4da6ff;
+  color: #070a12;
 }
