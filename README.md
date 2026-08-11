@@ -79,10 +79,11 @@ npm run deploy    # build + publish dist/ to GitHub Pages
 
 Every push and pull request runs the [CI/CD workflow](.github/workflows/ci.yml) on GitHub Actions:
 
-- **CI** — checks out the repo, installs dependencies with `npm ci` (Node 22, cached), and runs the production build. Pull requests stop here.
-- **CD** — on pushes to `main`/`master`, the built `dist/` folder is uploaded as a Pages artifact and deployed to **GitHub Pages** via `actions/deploy-pages`.
+- **CI** — checks out the repo, installs dependencies with `npm ci` (Node 22, cached), and runs the production build.
+- **CD** — on pushes to `master`, the built `dist/` folder is pushed to the **`gh-pages`** branch via `peaceiris/actions-gh-pages`, which GitHub Pages serves from.
+- **PR previews** — every pull request gets its own build deployed to `gh-pages` under `preview/pr-<number>/`, viewable at `https://tarunspartan.github.io/chain-reaction/preview/pr-<number>/` (link printed in the run summary). The preview is removed automatically when the PR closes.
 
-> One-time setup: in the repo's **Settings → Pages**, set the source to **GitHub Actions**. The `npm run deploy` script (gh-pages branch) still works as a manual fallback.
+> One-time setup: in the repo's **Settings → Pages**, set the source to **Deploy from a branch** → `gh-pages`. The `npm run deploy` script still works as a manual fallback.
 
 ## 🗺️ Roadmap Ideas
 
