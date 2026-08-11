@@ -100,6 +100,8 @@ const Board = () => {
     const toastTimerRef = useRef(null)
     const invalidTimerRef = useRef(null)
     const startDeniedTimerRef = useRef(null)
+    const dropPoolRef = useRef(null)
+    const dropPoolIdxRef = useRef(0)
 
     useEffect(() => { localStorage.setItem('sound',soundStatus) },[soundStatus])
     useEffect(() => { localStorage.setItem('boardSize',BoardSize) },[BoardSize])
@@ -180,9 +182,16 @@ const Board = () => {
         return alive.length === 1 ? alive[0] : null
     }
 
+    // a small round-robin pool avoids decoding drop.mp3 from scratch on every
+    // single move, while still letting rapid consecutive drops overlap instead
+    // of cutting each other off the way one reused Audio element would
     const playSound = (volume = 1) => {
         if(soundStatus !== 'on') return
-        const audio = new Audio(drop)
+        if(!dropPoolRef.current) dropPoolRef.current = Array.from({length: 4}, () => new Audio(drop))
+        const pool = dropPoolRef.current
+        const audio = pool[dropPoolIdxRef.current]
+        dropPoolIdxRef.current = (dropPoolIdxRef.current + 1) % pool.length
+        audio.currentTime = 0
         audio.volume = volume
         audio.play()
     }
@@ -774,7 +783,7 @@ const Board = () => {
                 </div>
                 </div>
                 </div>
-                <div className='hud'>
+                <div className='hud' style={{ width: BoardColumns*50*BoardScale }}>
                     {GameMode === 'blitz' && Players.length > 0 && !Winner &&
                         <div className='timerWrap'>
                             <div className='timerBar' style={{width:`${(TimeLeft/turnSecsRef.current)*100}%`, backgroundColor:currentColor}} />
