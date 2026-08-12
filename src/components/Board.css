@@ -362,6 +362,77 @@
     color: #d6e6ff;
 }
 
+/* two howToBtns share a .startRow now — let the row's own margin-top govern spacing */
+.startRow .howToBtn{
+    margin-top: 0;
+}
+
+/* ============ online play ============ */
+
+.codeBox{
+    width: min(420px, 86vw);
+    height: 92px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(10, 14, 26, 0.9);
+    border: 2px solid #2a3556;
+    color: #9fb4ff;
+    font-family: 'Chakra Petch', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    resize: none;
+    word-break: break-all;
+}
+
+.codeBox.editable{
+    color: #e8ecf5;
+    transition: border-color 150ms ease;
+}
+
+.codeBox.editable:focus{
+    outline: none;
+    border-color: #4da6ff;
+}
+
+.codeBox::placeholder{
+    color: #56618a;
+}
+
+.onlineErrorBanner{
+    max-width: min(420px, 86vw);
+    margin-top: 18px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: rgba(255, 70, 85, 0.12);
+    border: 1px solid rgba(255, 70, 85, 0.45);
+    color: #ff9aa3;
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.5;
+}
+
+.onlineDisconnectBanner{
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+    padding: 8px 18px;
+    border-radius: 999px;
+    background: rgba(255, 70, 85, 0.15);
+    border: 1px solid rgba(255, 70, 85, 0.5);
+    color: #ff9aa3;
+    font-family: 'Chakra Petch', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-align: center;
+    max-width: 90vw;
+}
+
 .playerStatus{
     display: flex;
     justify-content: center;

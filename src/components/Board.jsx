@@ -5,6 +5,7 @@ import drop from './drop.mp3'
 import { playExplosion, playWin, playClick, playDenied } from './sounds'
 import { criticalMass, neighbours, cloneBoard, findUnstable, applyWave, orbCounts, legalMoves } from './engine'
 import { chooseMove, PERSONAS, speak } from './ai'
+import { encodeBlob, decodeBlob, createHostConnection, createGuestConnection, createOffer, createAnswer, waitForDataChannel } from './webrtc'
 
 const PLAYERS = [
     { name: 'CRIMSON', color: '#ff4655' },
@@ -26,6 +27,9 @@ const MODES = [
     { id: 'sudden',  label: 'sudden death' },
     { id: 'teams',   label: 'teams' },
 ]
+
+// online play is 2 players only — cpu (local-only) and teams (needs 4+) don't apply
+const ONLINE_MODES = MODES.filter(m => m.id !== 'cpu' && m.id !== 'teams')
 
 const DIFFICULTIES = ['easy', 'medium', 'hard']
 
@@ -89,6 +93,18 @@ const Board = () => {
     const [ StartDenied, setStartDenied ] = useState(false)
     const [ BoardScale, setBoardScale ] = useState(1)
 
+    // ---- online play (WebRTC, manual copy/paste signaling) ----
+    const [ OnlineRole, setOnlineRole ] = useState(null) // null | 'host' | 'guest'
+    const [ OnlineStage, setOnlineStage ] = useState(null) // null | 'role-select' | 'config' | 'code-exchange' | 'pick-color' | 'connecting'
+    const [ OfferCode, setOfferCode ] = useState('')
+    const [ AnswerCode, setAnswerCode ] = useState('')
+    const [ PasteInput, setPasteInput ] = useState('')
+    const [ HostPreview, setHostPreview ] = useState(null) // {mode,cols,rows,hostName,hostColor}
+    const [ ConnectionState, setConnectionState ] = useState('connecting') // 'connecting' | 'connected' | 'disconnected'
+    const [ OnlineError, setOnlineError ] = useState(null)
+    const [ MyRematchReady, setMyRematchReady ] = useState(false)
+    const [ TheirRematchReady, setTheirRematchReady ] = useState(false)
+
     const processingRef = useRef(false)
     const movedRef = useRef({})
     const movesRef = useRef(0)
@@ -102,6 +118,16 @@ const Board = () => {
     const startDeniedTimerRef = useRef(null)
     const dropPoolRef = useRef(null)
     const dropPoolIdxRef = useRef(0)
+    const pcRef = useRef(null)
+    const channelRef = useRef(null)
+    const pendingRemoteMoveRef = useRef(null)
+    const everConnectedRef = useRef(false)
+    // channel.onmessage is wired up once per connection, but its body needs each render's
+    // latest state (CurrentPlayer, BoardArray, etc) — this ref always holds the freshest
+    // version of the handler (reassigned every render below), so the stable onmessage
+    // wrapper never goes stale without needing every piece of state listed as a dep
+    const handleDataChannelMessageRef = useRef(null)
+    const onlineConfigRef = useRef(null) // {mode,cols,rows,players} agreed for this match — reused verbatim on PLAY AGAIN
 
     useEffect(() => { localStorage.setItem('sound',soundStatus) },[soundStatus])
     useEffect(() => { localStorage.setItem('boardSize',BoardSize) },[BoardSize])
@@ -234,14 +260,26 @@ const Board = () => {
             botSay(humanWon ? 'lose' : 'win', humanWon ? Players[1].color : win.color)
         }
         processingRef.current = false
+        pendingRemoteMoveRef.current = null // game's over — nothing left to apply
     }
 
-    const blockClickHandler = async (x, y, scripted = false) => {
+    const onlineMyIdx = () => (OnlineRole === 'host' ? 0 : 1)
+
+    const blockClickHandler = async (x, y, scripted = false, fromRemote = false) => {
         if(processingRef.current || Winner || Players.length === 0) return
         if(GameMode === 'cpu' && CurrentPlayer !== 0 && !scripted) return // humans can't move for the CPU
+        if(OnlineRole && ConnectionState !== 'connected' && !fromRemote) return // frozen once disconnected
+        if(OnlineRole && !fromRemote && CurrentPlayer !== onlineMyIdx()) return // not my turn
+        if(OnlineRole && fromRemote && CurrentPlayer === onlineMyIdx()) return // stale/duplicate remote message — ignore
         const player = Players[CurrentPlayer]
         const owner = BoardArray[x][y][1]
         if(owner !== null && owner !== player.color){
+            if(fromRemote){
+                // the two boards already disagree about who owns this cell — a genuine
+                // protocol bug, not a normal "clicked an enemy cell." Never silently drop this.
+                reportFatalDesync('owner mismatch')
+                return
+            }
             // new players click enemy cells — show why nothing happened
             if(!scripted){
                 setInvalidCell(`${x}-${y}`)
@@ -257,6 +295,7 @@ const Board = () => {
         movedRef.current[player.color] = true
         movesRef.current += 1
         setMovesCount(movesRef.current)
+        if(OnlineRole && !fromRemote) sendMessage({ type: 'move', x, y, seq: movesRef.current })
 
         let board = cloneBoard(BoardArray)
         board[x][y] = [board[x][y][0]+1, player.color]
@@ -326,6 +365,12 @@ const Board = () => {
         } while(!alive.includes(Players[next]))
         setCurrentPlayer(next)
         processingRef.current = false
+        // a remote move that arrived while we were mid-animation was queued, not dropped — apply it now
+        if(pendingRemoteMoveRef.current){
+            const pending = pendingRemoteMoveRef.current
+            pendingRemoteMoveRef.current = null
+            blockClickHandler(pending.x, pending.y, true, true)
+        }
     }
 
     // ---- vs CPU: bots take their turns automatically ----
@@ -352,6 +397,9 @@ const Board = () => {
 
     useEffect(() => {
         if(GameMode !== 'blitz' || Winner || Players.length === 0 || TimeLeft > 0) return
+        // online: the countdown ticks on both screens, but only the peer whose turn it
+        // actually is should auto-play — otherwise this fires on both sides every timeout
+        if(OnlineRole && CurrentPlayer !== onlineMyIdx()) return
         if(processingRef.current) return
         const moves = legalMoves(BoardArray, Players[CurrentPlayer].color)
         if(moves.length > 0){
@@ -387,19 +435,22 @@ const Board = () => {
         startGame()
     }
 
-    const startGame = () => {
-        sfx(playClick)
-        const { cols, rows } = sizeDims(BoardSize)
+    // shared by local start and online setup so both peers reset every counter/ref
+    // identically — they run the same function body, not two hand-kept copies
+    const applyStart = ({ mode, cols, rows, players }) => {
         setBoardColumns(cols)
         setBoardRows(rows)
         setBoardArray(Array.from({length: rows}, () => Array.from({length: cols}, () => [0,null])))
-        setPlayers(SelectedColors)
+        setBoardScale(Math.min(1, MaxDims.cols / cols, MaxDims.rows / rows, 1))
+        setPlayers(players)
         setCurrentPlayer(0)
         setEliminated([])
         setWinner(null)
         setMovesCount(0)
         setSuddenDeath(false)
         setOvertimeLeft(0)
+        setMyRematchReady(false)
+        setTheirRematchReady(false)
         turnSecsRef.current = TURN_SECONDS[BoardSize] || 7
         setTimeLeft(turnSecsRef.current)
         movedRef.current = {}
@@ -407,8 +458,8 @@ const Board = () => {
         eliminatedRef.current = []
         overtimeRef.current = 0
         sdThresholdRef.current = Math.max(20, Math.round(rows * cols * 0.4))
-        if(GameMode === 'cpu' && SelectedColors.length > 1){
-            const botColor = SelectedColors[1].color
+        if(mode === 'cpu' && players.length > 1){
+            const botColor = players[1].color
             setTimeout(() => {
                 const text = speak(Difficulty, 'start')
                 if(text){
@@ -420,7 +471,17 @@ const Board = () => {
         }
     }
 
+    const startGame = () => {
+        sfx(playClick)
+        const { cols, rows } = sizeDims(BoardSize)
+        applyStart({ mode: GameMode, cols, rows, players: SelectedColors })
+    }
+
     const resetGame = () => {
+        if(OnlineRole){
+            sendMessage({ type: 'bye' })
+            teardownConnection()
+        }
         setBoardArray(Array.from({length: BoardRows}, () => Array.from({length: BoardColumns}, () => [0,null])))
         setPlayers([])
         setSelectedCount(null)
@@ -467,6 +528,244 @@ const Board = () => {
                 .catch(() => showToast('COPY FAILED', '#ff4655'))
         }
     }
+
+    // ---- online play: serverless WebRTC, manual copy/paste signaling ----
+
+    const sendMessage = (obj) => {
+        try { channelRef.current?.send(JSON.stringify(obj)) } catch { /* channel not open — nothing we can do */ }
+    }
+
+    // closes the live connection but keeps OnlineRole/game state intact, so the
+    // online turn-guards in blockClickHandler keep freezing input and the UI can
+    // still show a meaningful "your opponent disconnected" banner in context
+    const closeConnection = () => {
+        try { channelRef.current?.close() } catch { /* already closed */ }
+        try { pcRef.current?.close() } catch { /* already closed */ }
+        channelRef.current = null
+        pcRef.current = null
+        setConnectionState('disconnected')
+    }
+
+    // full reset for an intentional leave (lobby back button, Main Menu, tab close)
+    const teardownConnection = () => {
+        closeConnection()
+        everConnectedRef.current = false
+        pendingRemoteMoveRef.current = null
+        onlineConfigRef.current = null
+        setOnlineRole(null)
+        setOnlineStage(null)
+        setOfferCode('')
+        setAnswerCode('')
+        setPasteInput('')
+        setHostPreview(null)
+        setConnectionState('connecting')
+        setOnlineError(null)
+        setMyRematchReady(false)
+        setTheirRematchReady(false)
+    }
+
+    const reportFatalDesync = (reason) => {
+        console.error('online desync:', reason)
+        setOnlineError("Lost sync with your opponent — this match has ended.")
+        closeConnection()
+    }
+
+    const wirePeerConnection = (pc) => {
+        pc.oniceconnectionstatechange = () => {
+            const state = pc.iceConnectionState
+            if(state === 'failed' || state === 'disconnected' || state === 'closed'){
+                setOnlineError(everConnectedRef.current
+                    ? 'Connection to your opponent was lost.'
+                    : "Couldn't connect — this can happen behind a restrictive network, since no relay server is used. Try again or a different network.")
+                setConnectionState('disconnected')
+            }
+        }
+    }
+
+    const wireChannel = (channel) => {
+        channel.onopen = () => {
+            everConnectedRef.current = true
+            setConnectionState('connected')
+            setOnlineStage('pick-color')
+        }
+        channel.onclose = () => {
+            if(everConnectedRef.current) setConnectionState('disconnected')
+        }
+        channel.onmessage = (e) => handleDataChannelMessageRef.current?.(e.data)
+    }
+
+    const applyRemoteMove = (x, y) => {
+        if(processingRef.current){ pendingRemoteMoveRef.current = { x, y }; return }
+        blockClickHandler(x, y, true, true)
+    }
+
+    const startHosting = () => {
+        sfx(playClick)
+        setOnlineRole('host')
+        setOnlineStage('config')
+        setSelectedCount(1)
+        setSelectedColors([])
+    }
+
+    const startJoining = () => {
+        sfx(playClick)
+        setOnlineRole('guest')
+        setOnlineStage('paste-offer')
+        setPasteInput('')
+    }
+
+    const cancelOnline = () => {
+        sfx(playClick)
+        teardownConnection()
+    }
+
+    const copyCode = (code) => {
+        if(!navigator.clipboard) return
+        navigator.clipboard.writeText(code)
+            .then(() => showToast('CODE COPIED!', '#4da6ff'))
+            .catch(() => showToast('COPY FAILED', '#ff4655'))
+    }
+
+    const hostConfigConfirmed = async () => {
+        if(SelectedColors.length !== 1) return
+        sfx(playClick)
+        setOnlineError(null)
+        setOnlineStage('code-exchange')
+        try {
+            const pc = createHostConnection()
+            pcRef.current = pc
+            wirePeerConnection(pc)
+            const channel = pc.createDataChannel('game', { ordered: true })
+            channelRef.current = channel
+            wireChannel(channel)
+            const { cols, rows } = sizeDims(BoardSize)
+            const offerDesc = await createOffer(pc)
+            setOfferCode(encodeBlob({
+                v: 1, type: 'offer', sdp: offerDesc,
+                config: { mode: GameMode, cols, rows, hostName: SelectedColors[0].name, hostColor: SelectedColors[0].color },
+            }))
+        } catch {
+            setOnlineError('Could not create a connection offer. Try again.')
+            setOnlineStage('config')
+        }
+    }
+
+    const submitAnswerCode = async () => {
+        const decoded = decodeBlob(PasteInput)
+        if(!decoded || decoded.type !== 'answer' || !decoded.sdp){
+            setOnlineError('That code looks invalid — check you copied the whole thing.')
+            return
+        }
+        setOnlineError(null)
+        try {
+            await pcRef.current.setRemoteDescription(decoded.sdp)
+            setOnlineStage('connecting')
+        } catch {
+            setOnlineError('Could not complete the connection. Try again.')
+        }
+    }
+
+    const connectAsGuest = async (decoded) => {
+        try {
+            const pc = createGuestConnection()
+            pcRef.current = pc
+            wirePeerConnection(pc)
+            const channelPromise = waitForDataChannel(pc)
+            const answerDesc = await createAnswer(pc, decoded.sdp)
+            setAnswerCode(encodeBlob({ v: 1, type: 'answer', sdp: answerDesc }))
+            const channel = await channelPromise
+            channelRef.current = channel
+            wireChannel(channel)
+        } catch {
+            setOnlineError('Could not create a connection answer. Try again.')
+            setOnlineStage('paste-offer')
+        }
+    }
+
+    const submitOfferCode = () => {
+        const decoded = decodeBlob(PasteInput)
+        if(!decoded || decoded.type !== 'offer' || !decoded.sdp || !decoded.config){
+            setOnlineError('That code looks invalid — check you copied the whole thing.')
+            return
+        }
+        setOnlineError(null)
+        setHostPreview(decoded.config)
+        setOnlineStage('code-exchange')
+        connectAsGuest(decoded)
+    }
+
+    const confirmGuestColor = (p) => {
+        sfx(playClick)
+        setSelectedColors([p])
+        sendMessage({ type: 'guest-color', color: p.color, maxDims: computeMaxDims() })
+        setOnlineStage('connecting')
+    }
+
+    const handlePlayAgainOnline = () => {
+        sfx(playClick)
+        setMyRematchReady(true)
+        sendMessage({ type: 'rematch-request' })
+    }
+
+    // reassigned every render so the stable channel.onmessage wrapper above always
+    // calls into a version of this closure with this render's fresh state
+    handleDataChannelMessageRef.current = (raw) => {
+        let msg
+        try { msg = JSON.parse(raw) } catch { return }
+
+        if(msg.type === 'bye'){
+            setOnlineError('Your opponent disconnected.')
+            closeConnection()
+            return
+        }
+        if(msg.type === 'guest-color'){
+            if(OnlineRole !== 'host') return
+            const guestEntry = PLAYERS.find(p => p.color === msg.color)
+            const hostEntry = SelectedColors[0]
+            if(!guestEntry || !hostEntry) return
+            const { cols: hostCols, rows: hostRows } = sizeDims(BoardSize)
+            const guestMax = msg.maxDims || { cols: hostCols, rows: hostRows }
+            const cols = Math.max(4, Math.min(hostCols, guestMax.cols))
+            const rows = Math.max(5, Math.min(hostRows, guestMax.rows))
+            const config = { mode: GameMode, cols, rows, players: [hostEntry, guestEntry] }
+            onlineConfigRef.current = config
+            sendMessage({ type: 'setup', ...config })
+            setOnlineStage(null)
+            applyStart(config)
+            return
+        }
+        if(msg.type === 'setup'){
+            if(OnlineRole !== 'guest') return
+            const config = { mode: msg.mode, cols: msg.cols, rows: msg.rows, players: msg.players }
+            onlineConfigRef.current = config
+            setOnlineStage(null)
+            applyStart(config)
+            return
+        }
+        if(msg.type === 'move'){
+            applyRemoteMove(msg.x, msg.y)
+            return
+        }
+        if(msg.type === 'rematch-request'){
+            setTheirRematchReady(true)
+            return
+        }
+    }
+
+    // symmetric rematch — once both sides have clicked PLAY AGAIN, restart identically
+    useEffect(() => {
+        if(OnlineRole && MyRematchReady && TheirRematchReady && onlineConfigRef.current){
+            applyStart(onlineConfigRef.current)
+        }
+    },[MyRematchReady, TheirRematchReady])
+
+    // best-effort notice to the other peer if this tab closes mid-match
+    useEffect(() => {
+        if(!OnlineRole) return
+        const onUnload = () => { try { channelRef.current?.send(JSON.stringify({type:'bye'})) } catch { /* best-effort */ } }
+        window.addEventListener('beforeunload', onUnload)
+        return () => window.removeEventListener('beforeunload', onUnload)
+    },[OnlineRole])
 
     const currentColor = Players.length > 0 ? Players[CurrentPlayer].color : '#3a4566'
 
@@ -541,12 +840,20 @@ const Board = () => {
                         : GameMode === 'teams' ? 'two teams — eliminate the other side together'
                         : 'pass & play  •  each player gets a color  •  last one standing wins'}
                 </m.div>
-                <m.button className='howToBtn'
-                    initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.8}}
-                    whileHover={{scale:1.06}} whileTap={{scale:0.94}}
-                    onClick={() => {sfx(playClick); setShowTutorial(true)}}>
-                    <span role='img' aria-label='question'>❓</span>&nbsp;how to play
-                </m.button>
+                <div className='startRow'>
+                    <m.button className='howToBtn'
+                        initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.8}}
+                        whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                        onClick={() => {sfx(playClick); setShowTutorial(true)}}>
+                        <span role='img' aria-label='question'>❓</span>&nbsp;how to play
+                    </m.button>
+                    <m.button className='howToBtn'
+                        initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.85}}
+                        whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                        onClick={() => {sfx(playClick); setOnlineStage('role-select')}}>
+                        <span role='img' aria-label='globe'>🌐</span>&nbsp;play online
+                    </m.button>
+                </div>
             </> : <>
                 <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.1}}>
                     pick your colors&nbsp;&nbsp;—&nbsp;&nbsp;{SelectedColors.length} / {SelectedCount}
@@ -586,6 +893,144 @@ const Board = () => {
         </m.div>
     )
 
+    const onlineLobbyScreen = () => (
+        <m.div className='overlay' key='online'
+            initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.25}}>
+            <m.div className='gameTitle' initial={{y:-50,opacity:0}} animate={{y:0,opacity:1}} transition={{...spring, delay:0.05}}>
+                CHAIN<span className='titleAccent'>REACTION</span>
+            </m.div>
+
+            {OnlineError &&
+                <div className='onlineErrorBanner'>{OnlineError}</div>
+            }
+
+            {OnlineStage === 'role-select' && <>
+                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.15}}>
+                    play online
+                </m.div>
+                <m.div className='hint' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.2}}>
+                    no server involved — you'll trade one short code with your opponent through whatever app you already use to talk to them
+                </m.div>
+                <div className='startRow'>
+                    <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={startHosting}>HOST</m.button>
+                    <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={startJoining}>JOIN</m.button>
+                </div>
+                <m.button className='sizeBtn' style={{marginTop:20}} whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                    onClick={() => {sfx(playClick); setOnlineStage(null)}}>
+                    back
+                </m.button>
+            </>}
+
+            {OnlineRole === 'host' && OnlineStage === 'config' && <>
+                <div className='tagline'>game mode</div>
+                <div className='sizeRow modeRow'>
+                    {ONLINE_MODES.map(mode => (
+                        <m.button key={mode.id} className={`sizeBtn${GameMode === mode.id ? ' selected' : ''}`}
+                            whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                            onClick={() => {sfx(playClick); setGameMode(mode.id)}}>
+                            {mode.label}
+                        </m.button>
+                    ))}
+                </div>
+                <div className='tagline'>board size</div>
+                <div className='sizeRow'>
+                    {BOARD_SIZES.map(s => (
+                        <m.button key={s} className={`sizeBtn${BoardSize === s ? ' selected' : ''}`}
+                            whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                            onClick={() => {sfx(playClick); setBoardSize(s)}}>
+                            {s}
+                        </m.button>
+                    ))}
+                </div>
+                <div className='tagline'>your color</div>
+                <div className='colorGrid'>
+                    {PLAYERS.map(p => {
+                        const picked = SelectedColors.includes(p)
+                        return (
+                            <m.button key={p.color} className={`colorChip${picked ? ' picked' : ''}`} style={{'--c':p.color}}
+                                whileHover={{scale:1.12}} whileTap={{scale:0.9}}
+                                onClick={() => toggleColor(p)}
+                                aria-label={p.name} />
+                        )
+                    })}
+                </div>
+                <div className='startRow'>
+                    <m.button className='sizeBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>back</m.button>
+                    <m.button className={`neonBtn startBtn${SelectedColors.length !== 1 ? ' incomplete' : ''}`}
+                        whileHover={{scale:1.08}} whileTap={{scale:0.92}} onClick={hostConfigConfirmed}>
+                        CONTINUE
+                    </m.button>
+                </div>
+            </>}
+
+            {OnlineRole === 'host' && OnlineStage === 'code-exchange' && <>
+                <div className='tagline'>{OfferCode ? 'send this code to your opponent' : 'preparing your code…'}</div>
+                {OfferCode && <>
+                    <textarea className='codeBox' readOnly value={OfferCode} onFocus={(e) => e.target.select()} />
+                    <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => copyCode(OfferCode)}>
+                        COPY CODE
+                    </m.button>
+                    <div className='tagline' style={{marginTop:24}}>paste their reply code</div>
+                    <textarea className='codeBox editable' value={PasteInput} onChange={(e) => setPasteInput(e.target.value)}
+                        placeholder='paste the code your opponent sends back…' />
+                    <div className='startRow'>
+                        <m.button className='sizeBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>back</m.button>
+                        <m.button className='neonBtn startBtn' whileHover={{scale:1.08}} whileTap={{scale:0.92}}
+                            onClick={submitAnswerCode} disabled={!PasteInput.trim()}>
+                            CONNECT
+                        </m.button>
+                    </div>
+                </>}
+            </>}
+
+            {OnlineRole === 'guest' && OnlineStage === 'paste-offer' && <>
+                <div className='tagline'>paste the code your opponent sent</div>
+                <textarea className='codeBox editable' value={PasteInput} onChange={(e) => setPasteInput(e.target.value)}
+                    placeholder='paste their code here…' />
+                <div className='startRow'>
+                    <m.button className='sizeBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>back</m.button>
+                    <m.button className='neonBtn startBtn' whileHover={{scale:1.08}} whileTap={{scale:0.92}}
+                        onClick={submitOfferCode} disabled={!PasteInput.trim()}>
+                        CONTINUE
+                    </m.button>
+                </div>
+            </>}
+
+            {OnlineRole === 'guest' && OnlineStage === 'code-exchange' && <>
+                {HostPreview &&
+                    <div className='hint'>opponent picked <b style={{color:HostPreview.hostColor}}>{HostPreview.hostName}</b> — {HostPreview.mode} mode</div>
+                }
+                <div className='tagline'>{AnswerCode ? 'send this code back to them' : 'preparing your reply code…'}</div>
+                {AnswerCode && <>
+                    <textarea className='codeBox' readOnly value={AnswerCode} onFocus={(e) => e.target.select()} />
+                    <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => copyCode(AnswerCode)}>
+                        COPY CODE
+                    </m.button>
+                    <div className='hint' style={{marginTop:16}}>waiting for the connection to open…</div>
+                </>}
+            </>}
+
+            {OnlineStage === 'pick-color' && OnlineRole === 'guest' && <>
+                <div className='tagline'>pick your color</div>
+                <div className='colorGrid'>
+                    {PLAYERS.filter(p => p.color !== HostPreview?.hostColor).map(p => (
+                        <m.button key={p.color} className='colorChip' style={{'--c':p.color}}
+                            whileHover={{scale:1.12}} whileTap={{scale:0.9}}
+                            onClick={() => confirmGuestColor(p)}
+                            aria-label={p.name} />
+                    ))}
+                </div>
+            </>}
+            {OnlineStage === 'pick-color' && OnlineRole === 'host' && <>
+                <div className='hint'>waiting for your opponent to pick a color…</div>
+            </>}
+
+            {OnlineStage === 'connecting' && <>
+                <div className='hint'>connecting…</div>
+            </>}
+        </m.div>
+    )
+
     const winScreen = () => (
         <m.div className='overlay' key='win'
             initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.25}}>
@@ -602,12 +1047,21 @@ const Board = () => {
                     {Winner.members.map(p => <span key={p.color} className='playerDot' style={{'--c':p.color}} />)}
                 </m.div>
             }
-            <m.button className='neonBtn' style={{'--c':Winner.color}}
-                initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.45}}
-                whileHover={{scale:1.08}} whileTap={{scale:0.92}}
-                onClick={() => resetGame()}>
-                PLAY AGAIN
-            </m.button>
+            {OnlineRole && ConnectionState !== 'connected' ? (
+                <div className='hint' style={{marginTop:20}}>{OnlineError || 'connection lost — start a new match to play again'}</div>
+            ) : (
+                <m.button className='neonBtn' style={{'--c':Winner.color}}
+                    initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.45}}
+                    whileHover={{scale:1.08}} whileTap={{scale:0.92}}
+                    onClick={() => OnlineRole ? handlePlayAgainOnline() : resetGame()}>
+                    {OnlineRole && MyRematchReady ? 'WAITING FOR OPPONENT…' : 'PLAY AGAIN'}
+                </m.button>
+            )}
+            {OnlineRole &&
+                <m.button className='sizeBtn' style={{marginTop:14}} whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => resetGame()}>
+                    main menu
+                </m.button>
+            }
         </m.div>
     )
 
@@ -737,6 +1191,9 @@ const Board = () => {
     return (
         <div className='container' style={{'--turn':currentColor}}>
             <div className='ambientGlow' />
+            {OnlineRole && Players.length > 0 && !Winner && ConnectionState !== 'connected' &&
+                <div className='onlineDisconnectBanner'>{OnlineError || 'connection lost'}</div>
+            }
             <div className='centerDiv'>
                 <div className='turnBanner' style={{'--c':currentColor}}>
                     {Players.length > 0 && !Winner && (
@@ -811,7 +1268,8 @@ const Board = () => {
             <button className='settingsIcon' onClick={() => setShowSettings(true)} aria-label='settings'>&#x2699;</button>
             <LazyMotion features={domAnimation} strict>
                 <AnimatePresence>
-                    {Players.length === 0 && !showTutorial && startScreen()}
+                    {Players.length === 0 && !showTutorial && OnlineStage === null && startScreen()}
+                    {Players.length === 0 && OnlineStage !== null && onlineLobbyScreen()}
                     {Winner && winScreen()}
                     {showSettings && settingsScreen()}
                     {showTutorial && tutorialScreen()}
