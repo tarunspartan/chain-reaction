@@ -83,10 +83,11 @@ const Board = () => {
     const [ showSettings, setShowSettings ] = useState(false)
     const [ showTutorial, setShowTutorial ] = useState(false)
     const [ soundStatus, setSoundStatus ] = useState(localStorage.getItem('sound') || 'on')
-    const [ FaceTick, setFaceTick ] = useState(0)
     const [ Speech, setSpeech ] = useState(null)
     const [ Toast, setToast ] = useState(null)
     const [ InvalidCell, setInvalidCell ] = useState(null)
+    const [ StartDenied, setStartDenied ] = useState(false)
+    const [ BoardScale, setBoardScale ] = useState(1)
 
     const processingRef = useRef(false)
     const movedRef = useRef({})
@@ -98,30 +99,60 @@ const Board = () => {
     const turnSecsRef = useRef(7)
     const toastTimerRef = useRef(null)
     const invalidTimerRef = useRef(null)
+    const startDeniedTimerRef = useRef(null)
+    const dropPoolRef = useRef(null)
+    const dropPoolIdxRef = useRef(0)
 
     useEffect(() => { localStorage.setItem('sound',soundStatus) },[soundStatus])
     useEffect(() => { localStorage.setItem('boardSize',BoardSize) },[BoardSize])
     useEffect(() => { localStorage.setItem('gameMode',GameMode) },[GameMode])
     useEffect(() => { localStorage.setItem('difficulty',Difficulty) },[Difficulty])
 
-    useEffect(() => {
-        const id = setInterval(() => setFaceTick(t => t + 1), 900)
-        return () => clearInterval(id)
-    },[])
-
     // first-ever visit: open the tutorial so new players learn the rules
     useEffect(() => {
         if(!localStorage.getItem('tutorialSeen')) setShowTutorial(true)
     },[])
 
+    // Escape closes the settings modal
     useEffect(() => {
-        const cols = Math.max(4, ~~((window.innerWidth - 16)/50))
-        const rows = Math.max(5, ~~((window.innerHeight - 150)/50))
-        setMaxDims({ cols, rows })
-        setBoardColumns(cols)
-        setBoardRows(rows)
-        setBoardArray(Array.from({length: rows}, () => Array.from({length: cols}, () => [0,null])))
+        if(!showSettings) return
+        const onKeyDown = (e) => { if(e.key === 'Escape') setShowSettings(false) }
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    },[showSettings])
+
+    // ceiling on board dimensions that fits the current viewport at natural cell size (50px)
+    const computeMaxDims = () => ({
+        cols: Math.max(4, ~~((window.innerWidth - 16)/50)),
+        rows: Math.max(5, ~~((window.innerHeight - 150)/50)),
+    })
+
+    useEffect(() => {
+        const dims = computeMaxDims()
+        setMaxDims(dims)
+        setBoardColumns(dims.cols)
+        setBoardRows(dims.rows)
+        setBoardArray(Array.from({length: dims.rows}, () => Array.from({length: dims.cols}, () => [0,null])))
     },[])
+
+    // keep the board on-screen across resizes/rotations — never touch BoardArray mid-game
+    // (that would wipe placed orbs), so an active game just visually scales down to fit instead
+    useEffect(() => {
+        const onResize = () => {
+            const dims = computeMaxDims()
+            setMaxDims(dims)
+            if(Players.length === 0){
+                setBoardColumns(dims.cols)
+                setBoardRows(dims.rows)
+                setBoardArray(Array.from({length: dims.rows}, () => Array.from({length: dims.cols}, () => [0,null])))
+                setBoardScale(1)
+            } else {
+                setBoardScale(Math.min(1, dims.cols / BoardColumns, dims.rows / BoardRows))
+            }
+        }
+        window.addEventListener('resize', onResize)
+        return () => window.removeEventListener('resize', onResize)
+    },[Players.length, BoardColumns, BoardRows])
 
     const sizeDims = (size) => {
         switch(size){
@@ -151,9 +182,16 @@ const Board = () => {
         return alive.length === 1 ? alive[0] : null
     }
 
+    // a small round-robin pool avoids decoding drop.mp3 from scratch on every
+    // single move, while still letting rapid consecutive drops overlap instead
+    // of cutting each other off the way one reused Audio element would
     const playSound = (volume = 1) => {
         if(soundStatus !== 'on') return
-        const audio = new Audio(drop)
+        if(!dropPoolRef.current) dropPoolRef.current = Array.from({length: 4}, () => new Audio(drop))
+        const pool = dropPoolRef.current
+        const audio = pool[dropPoolIdxRef.current]
+        dropPoolIdxRef.current = (dropPoolIdxRef.current + 1) % pool.length
+        audio.currentTime = 0
         audio.volume = volume
         audio.play()
     }
@@ -338,6 +376,17 @@ const Board = () => {
         })
     }
 
+    const handleStartClick = () => {
+        if(SelectedColors.length !== SelectedCount){
+            sfx(playDenied)
+            setStartDenied(true)
+            clearTimeout(startDeniedTimerRef.current)
+            startDeniedTimerRef.current = setTimeout(() => setStartDenied(false), 320)
+            return
+        }
+        startGame()
+    }
+
     const startGame = () => {
         sfx(playClick)
         const { cols, rows } = sizeDims(BoardSize)
@@ -420,10 +469,6 @@ const Board = () => {
     }
 
     const currentColor = Players.length > 0 ? Players[CurrentPlayer].color : '#3a4566'
-
-    // the footer face cycles through the colors of the players in the game
-    const facePalette = Players.length > 0 ? Players : PLAYERS
-    const faceColor = facePalette[FaceTick % facePalette.length].color
 
     const countOptions = GameMode === 'teams' ? [4,6,8] : [2,3,4,5,6,7,8]
 
@@ -530,10 +575,10 @@ const Board = () => {
                         onClick={() => {sfx(playClick); setSelectedCount(null)}}>
                         back
                     </m.button>
-                    <m.button className='neonBtn startBtn' disabled={SelectedColors.length !== SelectedCount}
+                    <m.button className={`neonBtn startBtn${SelectedColors.length !== SelectedCount ? ' incomplete' : ''}${StartDenied ? ' denied' : ''}`}
                         initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.25}}
                         whileHover={{scale:1.08}} whileTap={{scale:0.92}}
-                        onClick={() => startGame()}>
+                        onClick={handleStartClick}>
                         START
                     </m.button>
                 </div>
@@ -705,7 +750,11 @@ const Board = () => {
                         <span className='firstHint'>tap an empty cell to drop an orb</span>
                     }
                 </div>
-                <div className={ShakeAmp > 0 ? 'boardFrame shaking' : 'boardFrame'} style={{'--amp':`${ShakeAmp}px`}}>
+                {/* outer reserves the actual (scaled) layout space; inner applies the pure fit-to-viewport
+                    scale so it never fights with boardFrame's own shake transform during chain reactions */}
+                <div className='boardScaler' style={{ width: BoardColumns*50*BoardScale, height: BoardRows*50*BoardScale }}>
+                <div className='boardScaleInner' style={{ width: BoardColumns*50, height: BoardRows*50, transform: `scale(${BoardScale})`, transformOrigin: 'top left' }}>
+                <div className={ShakeAmp > 0 ? 'boardFrame shaking' : 'boardFrame'} style={{'--amp':`${ShakeAmp}px`, width: BoardColumns*50}}>
                 {
                     BoardArray.map((row,rowindex) => {
                         return <div key={rowindex} className='boardRow'>
@@ -732,7 +781,9 @@ const Board = () => {
                     })
                 }
                 </div>
-                <div className='hud'>
+                </div>
+                </div>
+                <div className='hud' style={{ width: BoardColumns*50*BoardScale }}>
                     {GameMode === 'blitz' && Players.length > 0 && !Winner &&
                         <div className='timerWrap'>
                             <div className='timerBar' style={{width:`${(TimeLeft/turnSecsRef.current)*100}%`, backgroundColor:currentColor}} />
@@ -753,11 +804,11 @@ const Board = () => {
                         </div>
                     }
                     <div className='bottomBar'>
-                        <div className='footerTitle'>CHAIN<span className='footerDot'>•</span>REACTI<span className='face' style={{'--face':faceColor}}><span className='eye eyeL'/><span className='eye eyeR'/><span className='mouth'/></span>N</div>
-                        <div className='settingsIcon' onClick={() => setShowSettings(true)}>&#x2699;</div>
+                        <div className='footerTitle'>CHAIN<span className='footerDot'>•</span>REACTION</div>
                     </div>
                 </div>
             </div>
+            <button className='settingsIcon' onClick={() => setShowSettings(true)} aria-label='settings'>&#x2699;</button>
             <LazyMotion features={domAnimation} strict>
                 <AnimatePresence>
                     {Players.length === 0 && !showTutorial && startScreen()}
