@@ -1,10 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useMemo, useCallback, memo } from 'react'
 import { LazyMotion, domAnimation, m, AnimatePresence } from 'motion/react'
 import './Board.css'
 import drop from './drop.mp3'
 import { playExplosion, playWin, playClick, playDenied } from './sounds'
 import { criticalMass, neighbours, cloneBoard, findUnstable, applyWave, orbCounts, legalMoves } from './engine'
 import { chooseMove, PERSONAS, speak } from './ai'
+import { joinRoom } from 'trystero'
+import { APP_ID, ACTION_ID, ROOM_CODE_LENGTH, generateRoomCode, normalizeRoomCode } from './trystero'
 
 const PLAYERS = [
     { name: 'CRIMSON', color: '#ff4655' },
@@ -27,13 +29,21 @@ const MODES = [
     { id: 'teams',   label: 'teams' },
 ]
 
+// online play is 2 players only — cpu (local-only) and teams (needs 4+) don't apply
+const ONLINE_MODES = MODES.filter(m => m.id !== 'cpu' && m.id !== 'teams')
+
 const DIFFICULTIES = ['easy', 'medium', 'hard']
 
 const TURN_SECONDS = { small: 5, medium: 7, large: 10 }
 
+// Trystero has no "join failed" event — a bad code just looks like onPeerJoin never firing
+const CONNECT_TIMEOUT_MS = 20000
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 const spring = { type: 'spring', stiffness: 320, damping: 22 }
+
+const logMoveError = (e) => console.error('move failed:', e)
 
 // small static board used for the tutorial diagrams
 const MiniBoard = ({ cells }) => (
@@ -58,6 +68,50 @@ const MiniBoard = ({ cells }) => (
         ))}
     </div>
 )
+
+// decorative ambient background — a field of drifting, occasionally-flaring orbs
+// behind the menus. Positions/timings are fixed, not randomized.
+const BG_ORBS = [
+    { c: '#ff4655', top: '12%', left: '10%', size: 100, delay: '0s'    },
+    { c: '#3df56e', top: '72%', left: '6%',  size: 64,  delay: '-3s'  },
+    { c: '#4da6ff', top: '82%', left: '76%', size: 120, delay: '-6s'  },
+    { c: '#ffd234', top: '8%',  left: '80%', size: 76,  delay: '-1.5s'},
+    { c: '#b44dff', top: '38%', left: '92%', size: 54,  delay: '-4.5s'},
+    { c: '#00e5ff', top: '54%', left: '48%', size: 140, delay: '-7.5s'},
+    { c: '#ff4dd2', top: '22%', left: '42%', size: 58,  delay: '-2.5s'},
+    { c: '#f2f2f2', top: '88%', left: '32%', size: 46,  delay: '-5.5s'},
+]
+
+const AmbientOrbs = () => (
+    <div className='bgOrbField' aria-hidden='true'>
+        {BG_ORBS.map((o,i) => (
+            <span key={i} className='bgOrb' style={{
+                '--c': o.c, '--size': `${o.size}px`, '--delay': o.delay,
+                top: o.top, left: o.left,
+            }} />
+        ))}
+    </div>
+)
+
+// memoized so a cell only re-renders when its own props change, not on every
+// board-wide state update — onClick must stay a stable reference (see handleCellClick)
+const Cell = memo(({ row, col, count, ownerColor, critical, exploding, invalid, onClick }) => {
+    const n = Math.min(count, 3)
+    return (
+        <div className={invalid ? 'block invalid' : 'block'} onClick={() => onClick(row, col)}>
+            {exploding && <span className='burst' />}
+            {count > 0 &&
+                <div className={critical ? 'cluster critical' : 'cluster'}>
+                    {/* no key here — a key change would remount on every orb count change,
+                        restarting the spin animation instead of letting it continue */}
+                    <div className={`orbs n${n}`} style={{'--c':ownerColor}}>
+                        {Array.from({length:n}).map((_,q) => <span key={q} className='orb' />)}
+                    </div>
+                </div>
+            }
+        </div>
+    )
+})
 
 const Board = () => {
 
@@ -89,6 +143,19 @@ const Board = () => {
     const [ StartDenied, setStartDenied ] = useState(false)
     const [ BoardScale, setBoardScale ] = useState(1)
 
+    // ---- online play (serverless matchmaking via Trystero — one short room code) ----
+    const [ OnlineRole, setOnlineRole ] = useState(null) // null | 'host' | 'guest'
+    const [ OnlineStage, setOnlineStage ] = useState(null) // null | 'role-select' | 'config' | 'code-display' | 'join-code' | 'pick-color' | 'connecting'
+    const [ RoomCode, setRoomCode ] = useState('')
+    const [ RoomCodeInput, setRoomCodeInput ] = useState('')
+    const [ HostPreview, setHostPreview ] = useState(null) // {mode,cols,rows,hostName,hostColor}
+    const [ ConnectionState, setConnectionState ] = useState('connecting') // 'connecting' | 'connected' | 'disconnected'
+    const [ OnlineError, setOnlineError ] = useState(null)
+    const [ MyRematchReady, setMyRematchReady ] = useState(false)
+    const [ TheirRematchReady, setTheirRematchReady ] = useState(false)
+    // a remote move that arrived mid-animation, replayed once the local move finishes (see effect below)
+    const [ PendingRemoteMove, setPendingRemoteMove ] = useState(null)
+
     const processingRef = useRef(false)
     const movedRef = useRef({})
     const movesRef = useRef(0)
@@ -102,6 +169,15 @@ const Board = () => {
     const startDeniedTimerRef = useRef(null)
     const dropPoolRef = useRef(null)
     const dropPoolIdxRef = useRef(0)
+    const roomRef = useRef(null)
+    const msgActionRef = useRef(null)
+    const peerIdRef = useRef(null) // the one opponent peerId we've bound to — ignore any other
+    const connectTimeoutRef = useRef(null)
+    const pendingRemoteMoveRef = useRef(null)
+    const everConnectedRef = useRef(false)
+    // always the latest message handler, so the stable action.onMessage wrapper never goes stale
+    const handleMessageRef = useRef(null)
+    const onlineConfigRef = useRef(null) // {mode,cols,rows,players} agreed for this match — reused verbatim on PLAY AGAIN
 
     useEffect(() => { localStorage.setItem('sound',soundStatus) },[soundStatus])
     useEffect(() => { localStorage.setItem('boardSize',BoardSize) },[BoardSize])
@@ -121,10 +197,10 @@ const Board = () => {
         return () => window.removeEventListener('keydown', onKeyDown)
     },[showSettings])
 
-    // ceiling on board dimensions that fits the current viewport at natural cell size (50px)
+    // ceiling on board dimensions — capped so "large" doesn't balloon on a wide monitor
     const computeMaxDims = () => ({
-        cols: Math.max(4, ~~((window.innerWidth - 16)/50)),
-        rows: Math.max(5, ~~((window.innerHeight - 150)/50)),
+        cols: Math.min(16, Math.max(4, ~~((window.innerWidth - 16)/50))),
+        rows: Math.min(14, Math.max(5, ~~((window.innerHeight - 150)/50))),
     })
 
     useEffect(() => {
@@ -135,8 +211,7 @@ const Board = () => {
         setBoardArray(Array.from({length: dims.rows}, () => Array.from({length: dims.cols}, () => [0,null])))
     },[])
 
-    // keep the board on-screen across resizes/rotations — never touch BoardArray mid-game
-    // (that would wipe placed orbs), so an active game just visually scales down to fit instead
+    // never touch BoardArray mid-game (would wipe orbs) — just scale it visually to fit
     useEffect(() => {
         const onResize = () => {
             const dims = computeMaxDims()
@@ -182,9 +257,7 @@ const Board = () => {
         return alive.length === 1 ? alive[0] : null
     }
 
-    // a small round-robin pool avoids decoding drop.mp3 from scratch on every
-    // single move, while still letting rapid consecutive drops overlap instead
-    // of cutting each other off the way one reused Audio element would
+    // a small round-robin pool lets rapid consecutive drops overlap instead of cutting off
     const playSound = (volume = 1) => {
         if(soundStatus !== 'on') return
         if(!dropPoolRef.current) dropPoolRef.current = Array.from({length: 4}, () => new Audio(drop))
@@ -234,14 +307,25 @@ const Board = () => {
             botSay(humanWon ? 'lose' : 'win', humanWon ? Players[1].color : win.color)
         }
         processingRef.current = false
+        pendingRemoteMoveRef.current = null // game's over — nothing left to apply
     }
 
-    const blockClickHandler = async (x, y, scripted = false) => {
+    const onlineMyIdx = () => (OnlineRole === 'host' ? 0 : 1)
+
+    const blockClickHandler = async (x, y, scripted = false, fromRemote = false) => {
         if(processingRef.current || Winner || Players.length === 0) return
         if(GameMode === 'cpu' && CurrentPlayer !== 0 && !scripted) return // humans can't move for the CPU
+        if(OnlineRole && ConnectionState !== 'connected' && !fromRemote) return // frozen once disconnected
+        if(OnlineRole && !fromRemote && CurrentPlayer !== onlineMyIdx()) return // not my turn
+        if(OnlineRole && fromRemote && CurrentPlayer === onlineMyIdx()) return // stale/duplicate remote message — ignore
         const player = Players[CurrentPlayer]
         const owner = BoardArray[x][y][1]
         if(owner !== null && owner !== player.color){
+            if(fromRemote){
+                // the two boards disagree about ownership — a real desync, not a normal enemy click
+                reportFatalDesync('owner mismatch')
+                return
+            }
             // new players click enemy cells — show why nothing happened
             if(!scripted){
                 setInvalidCell(`${x}-${y}`)
@@ -253,92 +337,128 @@ const Board = () => {
         }
 
         processingRef.current = true
-        playSound()
-        movedRef.current[player.color] = true
-        movesRef.current += 1
-        setMovesCount(movesRef.current)
+        // finally guarantees this resets even if something throws mid-move —
+        // otherwise every future click would silently freeze
+        try {
+            playSound()
+            movedRef.current[player.color] = true
+            movesRef.current += 1
+            setMovesCount(movesRef.current)
+            if(OnlineRole && !fromRemote) sendMessage({ type: 'move', x, y, seq: movesRef.current })
 
-        let board = cloneBoard(BoardArray)
-        board[x][y] = [board[x][y][0]+1, player.color]
-        setBoardArray(cloneBoard(board))
-
-        // chain waves get faster, louder and shakier the deeper they go
-        let unstable = findUnstable(board, BoardRows, BoardColumns)
-        let wave = 0
-        while(unstable.length > 0){
-            setExploding(new Set(unstable.map(([i,j]) => `${i}-${j}`)))
-            setShakeAmp(Math.min(0.8 + wave * 0.6, 5))
-            await sleep(Math.max(90, 220 - wave * 15))
-            unstable = applyWave(board, unstable, player.color, BoardRows, BoardColumns)
+            let board = cloneBoard(BoardArray)
+            board[x][y] = [board[x][y][0]+1, player.color]
             setBoardArray(cloneBoard(board))
-            setExploding(new Set())
-            sfx(playExplosion, wave)
-            const win = winnerOf(alivePlayers(board))
+
+            // chain waves get faster, louder and shakier the deeper they go
+            let unstable = findUnstable(board, BoardRows, BoardColumns)
+            let wave = 0
+            while(unstable.length > 0){
+                setExploding(new Set(unstable.map(([i,j]) => `${i}-${j}`)))
+                setShakeAmp(Math.min(0.8 + wave * 0.6, 5))
+                await sleep(Math.max(90, 220 - wave * 15))
+                unstable = applyWave(board, unstable, player.color, BoardRows, BoardColumns)
+                setBoardArray(cloneBoard(board))
+                setExploding(new Set())
+                sfx(playExplosion, wave)
+                const win = winnerOf(alivePlayers(board))
+                if(win) return finishGame(win)
+                wave += 1
+                if(wave > 250) break // safety net for saturated boards
+            }
+            setShakeAmp(0)
+
+            const alive = alivePlayers(board)
+            const deadColors = Players.filter(p => !alive.includes(p)).map(p => p.color)
+            const newlyDead = deadColors.filter(c => !eliminatedRef.current.includes(c))
+            eliminatedRef.current = deadColors
+            setEliminated(deadColors)
+            const win = winnerOf(alive)
             if(win) return finishGame(win)
-            wave += 1
-            if(wave > 250) break // safety net for saturated boards
-        }
-        setShakeAmp(0)
 
-        const alive = alivePlayers(board)
-        const deadColors = Players.filter(p => !alive.includes(p)).map(p => p.color)
-        const newlyDead = deadColors.filter(c => !eliminatedRef.current.includes(c))
-        eliminatedRef.current = deadColors
-        setEliminated(deadColors)
-        const win = winnerOf(alive)
-        if(win) return finishGame(win)
+            if(GameMode === 'cpu'){
+                const botDied = newlyDead.find(c => c !== Players[0].color)
+                const isBotMove = CurrentPlayer !== 0
+                if(newlyDead.includes(Players[0].color)) showToast('YOU ARE OUT!', Players[0].color)
+                else if(botDied) botSay('eliminated', botDied)
+                else if(isBotMove && wave >= 3) botSay('bigChain', player.color)
+                else if(isBotMove) botSay('move', player.color, 0.25)
+                else if(wave >= 3) botSay('humanBig', (alive.find(p => p !== Players[0]) || player).color, 0.9)
+            } else if(newlyDead.length > 0){
+                const out = Players.find(p => p.color === newlyDead[0])
+                if(out) showToast(`${out.name} IS OUT!`, out.color)
+            }
 
-        if(GameMode === 'cpu'){
-            const botDied = newlyDead.find(c => c !== Players[0].color)
-            const isBotMove = CurrentPlayer !== 0
-            if(newlyDead.includes(Players[0].color)) showToast('YOU ARE OUT!', Players[0].color)
-            else if(botDied) botSay('eliminated', botDied)
-            else if(isBotMove && wave >= 3) botSay('bigChain', player.color)
-            else if(isBotMove) botSay('move', player.color, 0.25)
-            else if(wave >= 3) botSay('humanBig', (alive.find(p => p !== Players[0]) || player).color, 0.9)
-        } else if(newlyDead.length > 0){
-            const out = Players.find(p => p.color === newlyDead[0])
-            if(out) showToast(`${out.name} IS OUT!`, out.color)
-        }
-
-        // sudden death: long games go to overtime — when it runs out, most orbs wins
-        if(GameMode === 'sudden'){
-            if(!SuddenDeath && movesRef.current >= sdThresholdRef.current){
-                setSuddenDeath(true)
-                overtimeRef.current = Players.length * 2
-                setOvertimeLeft(overtimeRef.current)
-                sfx(playExplosion, 5)
-            } else if(SuddenDeath){
-                overtimeRef.current = Math.max(0, overtimeRef.current - 1)
-                setOvertimeLeft(overtimeRef.current)
-                if(overtimeRef.current === 0){
-                    const counts = orbCounts(board)
-                    const best = Math.max(...alive.map(p => counts[p.color] || 0))
-                    const leaders = alive.filter(p => (counts[p.color] || 0) === best)
-                    if(leaders.length === 1) return finishGame(leaders[0])
-                    // tied — play on until someone takes the lead
+            // sudden death: long games go to overtime — when it runs out, most orbs wins
+            if(GameMode === 'sudden'){
+                if(!SuddenDeath && movesRef.current >= sdThresholdRef.current){
+                    setSuddenDeath(true)
+                    overtimeRef.current = Players.length * 2
+                    setOvertimeLeft(overtimeRef.current)
+                    sfx(playExplosion, 5)
+                } else if(SuddenDeath){
+                    overtimeRef.current = Math.max(0, overtimeRef.current - 1)
+                    setOvertimeLeft(overtimeRef.current)
+                    if(overtimeRef.current === 0){
+                        const counts = orbCounts(board)
+                        const best = Math.max(...alive.map(p => counts[p.color] || 0))
+                        const leaders = alive.filter(p => (counts[p.color] || 0) === best)
+                        if(leaders.length === 1) return finishGame(leaders[0])
+                        // tied — play on until someone takes the lead
+                    }
                 }
             }
+            let next = CurrentPlayer
+            do {
+                next = (next + 1) % Players.length
+            } while(!alive.includes(Players[next]))
+            setCurrentPlayer(next)
+        } finally {
+            processingRef.current = false
         }
-        let next = CurrentPlayer
-        do {
-            next = (next + 1) % Players.length
-        } while(!alive.includes(Players[next]))
-        setCurrentPlayer(next)
-        processingRef.current = false
+        // hand a queued remote move off to state (see effect below) rather than replaying it
+        // directly — this closure's CurrentPlayer is stale, so a direct call would misread it
+        if(pendingRemoteMoveRef.current){
+            const pending = pendingRemoteMoveRef.current
+            pendingRemoteMoveRef.current = null
+            setPendingRemoteMove(pending)
+        }
     }
 
+    // stable ref to the latest blockClickHandler, so handleCellClick's identity never changes
+    const blockClickHandlerRef = useRef(null)
+    blockClickHandlerRef.current = blockClickHandler
+    const handleCellClick = useCallback((x, y) => blockClickHandlerRef.current(x, y).catch(logMoveError), [])
+
+    // always the latest BoardArray, without listing it as a dependency below
+    const boardArrayRef = useRef(BoardArray)
+    boardArrayRef.current = BoardArray
+
+    const criticalMassGrid = useMemo(() => {
+        if(!BoardRows || !BoardColumns) return []
+        return Array.from({length: BoardRows}, (_,i) =>
+            Array.from({length: BoardColumns}, (_,j) => criticalMass(i, j, BoardRows, BoardColumns)))
+    },[BoardRows, BoardColumns])
+
+    useEffect(() => {
+        if(!PendingRemoteMove) return
+        setPendingRemoteMove(null)
+        blockClickHandler(PendingRemoteMove.x, PendingRemoteMove.y, true, true).catch(logMoveError)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    },[PendingRemoteMove])
+
     // ---- vs CPU: bots take their turns automatically ----
+    // not dependent on BoardArray — that changes on every wave of any explosion, which
+    // would re-arm this timer mid-chain instead of once per turn (reads via boardArrayRef instead)
     useEffect(() => {
         if(GameMode !== 'cpu' || Winner || Players.length === 0 || CurrentPlayer === 0) return
         const id = setTimeout(() => {
             if(processingRef.current) return
-            const move = chooseMove(BoardArray, CurrentPlayer, Players, BoardRows, BoardColumns, Difficulty)
-            if(move) blockClickHandler(move[0], move[1], true)
+            const move = chooseMove(boardArrayRef.current, CurrentPlayer, Players, BoardRows, BoardColumns, Difficulty)
+            if(move) blockClickHandler(move[0], move[1], true).catch(logMoveError)
         }, 650)
         return () => clearTimeout(id)
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    },[CurrentPlayer, Players, Winner, GameMode, BoardArray])
+    },[CurrentPlayer, Players, Winner, GameMode])
 
     // ---- blitz: countdown per turn, timeout plays a random legal move ----
     useEffect(() => {
@@ -352,11 +472,13 @@ const Board = () => {
 
     useEffect(() => {
         if(GameMode !== 'blitz' || Winner || Players.length === 0 || TimeLeft > 0) return
+        // online: only the peer whose turn it actually is should auto-play the timeout
+        if(OnlineRole && CurrentPlayer !== onlineMyIdx()) return
         if(processingRef.current) return
         const moves = legalMoves(BoardArray, Players[CurrentPlayer].color)
         if(moves.length > 0){
             const [x, y] = moves[~~(Math.random() * moves.length)]
-            blockClickHandler(x, y, true)
+            blockClickHandler(x, y, true).catch(logMoveError)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     },[TimeLeft])
@@ -371,6 +493,7 @@ const Board = () => {
         sfx(playClick)
         setSelectedColors(prev => {
             if(prev.includes(p)) return prev.filter(x => x !== p)
+            if(SelectedCount === 1) return [p] // single-slot pick — swap instead of deselect-then-reselect
             if(prev.length >= SelectedCount) return prev
             return [...prev, p]
         })
@@ -387,19 +510,21 @@ const Board = () => {
         startGame()
     }
 
-    const startGame = () => {
-        sfx(playClick)
-        const { cols, rows } = sizeDims(BoardSize)
+    // shared by local start and online setup, so both peers reset identically
+    const applyStart = ({ mode, cols, rows, players }) => {
         setBoardColumns(cols)
         setBoardRows(rows)
         setBoardArray(Array.from({length: rows}, () => Array.from({length: cols}, () => [0,null])))
-        setPlayers(SelectedColors)
+        setBoardScale(Math.min(1, MaxDims.cols / cols, MaxDims.rows / rows, 1))
+        setPlayers(players)
         setCurrentPlayer(0)
         setEliminated([])
         setWinner(null)
         setMovesCount(0)
         setSuddenDeath(false)
         setOvertimeLeft(0)
+        setMyRematchReady(false)
+        setTheirRematchReady(false)
         turnSecsRef.current = TURN_SECONDS[BoardSize] || 7
         setTimeLeft(turnSecsRef.current)
         movedRef.current = {}
@@ -407,8 +532,8 @@ const Board = () => {
         eliminatedRef.current = []
         overtimeRef.current = 0
         sdThresholdRef.current = Math.max(20, Math.round(rows * cols * 0.4))
-        if(GameMode === 'cpu' && SelectedColors.length > 1){
-            const botColor = SelectedColors[1].color
+        if(mode === 'cpu' && players.length > 1){
+            const botColor = players[1].color
             setTimeout(() => {
                 const text = speak(Difficulty, 'start')
                 if(text){
@@ -420,7 +545,17 @@ const Board = () => {
         }
     }
 
+    const startGame = () => {
+        sfx(playClick)
+        const { cols, rows } = sizeDims(BoardSize)
+        applyStart({ mode: GameMode, cols, rows, players: SelectedColors })
+    }
+
     const resetGame = () => {
+        if(OnlineRole){
+            sendMessage({ type: 'bye' })
+            teardownConnection()
+        }
         setBoardArray(Array.from({length: BoardRows}, () => Array.from({length: BoardColumns}, () => [0,null])))
         setPlayers([])
         setSelectedCount(null)
@@ -468,6 +603,232 @@ const Board = () => {
         }
     }
 
+    // ---- online play: serverless matchmaking via Trystero (one short room code) ----
+
+    const sendMessage = (obj) => {
+        try { msgActionRef.current?.send(obj) } catch { /* not connected — nothing we can do */ }
+    }
+
+    // keeps OnlineRole/game state intact so the UI can still show "opponent disconnected"
+    const closeConnection = () => {
+        clearTimeout(connectTimeoutRef.current)
+        // detach handlers first — leave() can itself trigger onPeerLeave
+        if(roomRef.current){
+            roomRef.current.onPeerJoin = null
+            roomRef.current.onPeerLeave = null
+            try { roomRef.current.leave() } catch { /* already gone */ }
+        }
+        roomRef.current = null
+        msgActionRef.current = null
+        peerIdRef.current = null
+        setConnectionState('disconnected')
+    }
+
+    // full reset for an intentional leave (lobby back button, Main Menu, tab close)
+    const teardownConnection = () => {
+        closeConnection()
+        everConnectedRef.current = false
+        pendingRemoteMoveRef.current = null
+        onlineConfigRef.current = null
+        setOnlineRole(null)
+        setOnlineStage(null)
+        setRoomCode('')
+        setRoomCodeInput('')
+        setHostPreview(null)
+        setConnectionState('connecting')
+        setOnlineError(null)
+        setMyRematchReady(false)
+        setTheirRematchReady(false)
+        // startHosting() borrows these for its one-color picker — clear them too
+        setSelectedCount(null)
+        setSelectedColors([])
+    }
+
+    const reportFatalDesync = (reason) => {
+        console.error('online desync:', reason)
+        setOnlineError("Lost sync with your opponent — this match has ended.")
+        closeConnection()
+    }
+
+    const startConnectTimeout = () => {
+        clearTimeout(connectTimeoutRef.current)
+        connectTimeoutRef.current = setTimeout(() => {
+            setOnlineError("Couldn't connect — double check the code, or this can happen behind a restrictive network. Try again.")
+            setConnectionState('disconnected')
+        }, CONNECT_TIMEOUT_MS)
+    }
+
+    const wireRoom = (room, role) => {
+        room.onPeerJoin = (peerId) => {
+            if(peerIdRef.current && peerIdRef.current !== peerId) return // extra/unexpected peer
+            peerIdRef.current = peerId
+            clearTimeout(connectTimeoutRef.current)
+            everConnectedRef.current = true
+            setConnectionState('connected')
+            if(role === 'host'){
+                const { cols, rows } = sizeDims(BoardSize)
+                sendMessage({ type: 'host-config', mode: GameMode, cols, rows, hostName: SelectedColors[0].name, hostColor: SelectedColors[0].color })
+                setOnlineStage('pick-color')
+            }
+            // guest stays on 'connecting' until host-config arrives
+        }
+        room.onPeerLeave = (peerId) => {
+            if(peerId !== peerIdRef.current) return
+            setOnlineError(everConnectedRef.current
+                ? 'Connection to your opponent was lost.'
+                : "Couldn't connect — double check the code, or this can happen behind a restrictive network. Try again.")
+            setConnectionState('disconnected')
+        }
+    }
+
+    const applyRemoteMove = (x, y) => {
+        if(processingRef.current){ pendingRemoteMoveRef.current = { x, y }; return }
+        blockClickHandler(x, y, true, true).catch(logMoveError)
+    }
+
+    const startHosting = () => {
+        sfx(playClick)
+        setOnlineRole('host')
+        setOnlineStage('config')
+        setSelectedCount(1)
+        setSelectedColors([])
+    }
+
+    const startJoining = () => {
+        sfx(playClick)
+        setOnlineRole('guest')
+        setOnlineStage('join-code')
+        setRoomCodeInput('')
+    }
+
+    const cancelOnline = () => {
+        sfx(playClick)
+        teardownConnection()
+    }
+
+    const copyCode = (code) => {
+        if(!navigator.clipboard) return
+        navigator.clipboard.writeText(code)
+            .then(() => showToast('CODE COPIED!', '#4da6ff'))
+            .catch(() => showToast('COPY FAILED', '#ff4655'))
+    }
+
+    const joinTrysteroRoom = (code, role) => {
+        const room = joinRoom({ appId: APP_ID }, code)
+        roomRef.current = room
+        msgActionRef.current = room.makeAction(ACTION_ID)
+        msgActionRef.current.onMessage = (msg, { peerId }) => handleMessageRef.current?.(msg, peerId)
+        wireRoom(room, role)
+        startConnectTimeout()
+    }
+
+    const hostConfigConfirmed = () => {
+        if(SelectedColors.length !== 1) return
+        sfx(playClick)
+        setOnlineError(null)
+        const code = generateRoomCode()
+        setRoomCode(code)
+        setOnlineStage('code-display')
+        try {
+            joinTrysteroRoom(code, 'host')
+        } catch {
+            setOnlineError('Could not start hosting. Try again.')
+            setOnlineStage('config')
+        }
+    }
+
+    const submitRoomCode = () => {
+        const code = normalizeRoomCode(RoomCodeInput)
+        if(code.length !== ROOM_CODE_LENGTH){
+            setOnlineError('That code looks too short — check you typed it correctly.')
+            return
+        }
+        setOnlineError(null)
+        setRoomCode(code)
+        setOnlineStage('connecting')
+        try {
+            joinTrysteroRoom(code, 'guest')
+        } catch {
+            setOnlineError('Could not join that room. Try again.')
+            setOnlineStage('join-code')
+        }
+    }
+
+    const confirmGuestColor = (p) => {
+        sfx(playClick)
+        setSelectedColors([p])
+        sendMessage({ type: 'guest-color', color: p.color, maxDims: computeMaxDims() })
+        setOnlineStage('connecting')
+    }
+
+    const handlePlayAgainOnline = () => {
+        sfx(playClick)
+        setMyRematchReady(true)
+        sendMessage({ type: 'rematch-request' })
+    }
+
+    // reassigned every render so the stable action.onMessage wrapper stays fresh
+    handleMessageRef.current = (msg) => {
+        if(msg.type === 'bye'){
+            setOnlineError('Your opponent disconnected.')
+            closeConnection()
+            return
+        }
+        if(msg.type === 'host-config'){
+            if(OnlineRole !== 'guest') return
+            setHostPreview({ mode: msg.mode, cols: msg.cols, rows: msg.rows, hostName: msg.hostName, hostColor: msg.hostColor })
+            setOnlineStage('pick-color')
+            return
+        }
+        if(msg.type === 'guest-color'){
+            if(OnlineRole !== 'host') return
+            const guestEntry = PLAYERS.find(p => p.color === msg.color)
+            const hostEntry = SelectedColors[0]
+            if(!guestEntry || !hostEntry) return
+            const { cols: hostCols, rows: hostRows } = sizeDims(BoardSize)
+            const guestMax = msg.maxDims || { cols: hostCols, rows: hostRows }
+            const cols = Math.max(4, Math.min(hostCols, guestMax.cols))
+            const rows = Math.max(5, Math.min(hostRows, guestMax.rows))
+            const config = { mode: GameMode, cols, rows, players: [hostEntry, guestEntry] }
+            onlineConfigRef.current = config
+            sendMessage({ type: 'setup', ...config })
+            setOnlineStage(null)
+            applyStart(config)
+            return
+        }
+        if(msg.type === 'setup'){
+            if(OnlineRole !== 'guest') return
+            const config = { mode: msg.mode, cols: msg.cols, rows: msg.rows, players: msg.players }
+            onlineConfigRef.current = config
+            setOnlineStage(null)
+            applyStart(config)
+            return
+        }
+        if(msg.type === 'move'){
+            applyRemoteMove(msg.x, msg.y)
+            return
+        }
+        if(msg.type === 'rematch-request'){
+            setTheirRematchReady(true)
+            return
+        }
+    }
+
+    // symmetric rematch — once both sides have clicked PLAY AGAIN, restart identically
+    useEffect(() => {
+        if(OnlineRole && MyRematchReady && TheirRematchReady && onlineConfigRef.current){
+            applyStart(onlineConfigRef.current)
+        }
+    },[MyRematchReady, TheirRematchReady])
+
+    // best-effort notice to the other peer if this tab closes mid-match
+    useEffect(() => {
+        if(!OnlineRole) return
+        const onUnload = () => { try { msgActionRef.current?.send({ type: 'bye' }) } catch { /* best-effort */ } }
+        window.addEventListener('beforeunload', onUnload)
+        return () => window.removeEventListener('beforeunload', onUnload)
+    },[OnlineRole])
+
     const currentColor = Players.length > 0 ? Players[CurrentPlayer].color : '#3a4566'
 
     const countOptions = GameMode === 'teams' ? [4,6,8] : [2,3,4,5,6,7,8]
@@ -483,6 +844,15 @@ const Board = () => {
                 CHAIN<span className='titleAccent'>REACTION</span>
             </m.div>
             {SelectedCount === null ? <>
+                <m.button className='neonBtn onlineCta' style={{'--c':'#00e5ff'}}
+                    initial={{opacity:0,y:-10}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.1}}
+                    whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                    onClick={() => {sfx(playClick); setOnlineStage('role-select')}}>
+                    <span role='img' aria-label='globe'>🌐</span>&nbsp;PLAY ONLINE
+                </m.button>
+                <m.div className='divider' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.15}}>
+                    or play locally
+                </m.div>
                 <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.2}}>
                     game mode
                 </m.div>
@@ -496,18 +866,20 @@ const Board = () => {
                         </m.button>
                     ))}
                 </div>
-                {GameMode === 'cpu' &&
-                    <div className='sizeRow'>
-                        {DIFFICULTIES.map(d => (
-                            <m.button key={d} className={`sizeBtn diffBtn${Difficulty === d ? ' selected' : ''}`}
-                                initial={{opacity:0}} animate={{opacity:1}}
-                                whileHover={{scale:1.06}} whileTap={{scale:0.94}}
-                                onClick={() => {sfx(playClick); setDifficulty(d)}}>
-                                {d}
-                            </m.button>
-                        ))}
-                    </div>
-                }
+                {/* always rendered (never conditionally mounted/unmounted) so its real
+                    height is always reserved — switching in and out of vs-cpu mode must
+                    not shift the board-size/player-count controls below it up or down */}
+                <div className='sizeRow' aria-hidden={GameMode !== 'cpu'} style={GameMode !== 'cpu' ? {visibility:'hidden'} : undefined}>
+                    {DIFFICULTIES.map(d => (
+                        <m.button key={d} className={`diffBtn${Difficulty === d ? ' selected' : ''}`}
+                            tabIndex={GameMode === 'cpu' ? 0 : -1}
+                            initial={{opacity:0}} animate={{opacity:1}}
+                            whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                            onClick={() => { if(GameMode === 'cpu'){ sfx(playClick); setDifficulty(d) } }}>
+                            {d}
+                        </m.button>
+                    ))}
+                </div>
                 <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.3}}>
                     board size
                 </m.div>
@@ -541,12 +913,14 @@ const Board = () => {
                         : GameMode === 'teams' ? 'two teams — eliminate the other side together'
                         : 'pass & play  •  each player gets a color  •  last one standing wins'}
                 </m.div>
-                <m.button className='howToBtn'
-                    initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.8}}
-                    whileHover={{scale:1.06}} whileTap={{scale:0.94}}
-                    onClick={() => {sfx(playClick); setShowTutorial(true)}}>
-                    <span role='img' aria-label='question'>❓</span>&nbsp;how to play
-                </m.button>
+                <div className='startRow'>
+                    <m.button className='howToBtn'
+                        initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.8}}
+                        whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                        onClick={() => {sfx(playClick); setShowTutorial(true)}}>
+                        <span role='img' aria-label='question'>❓</span>&nbsp;how to play
+                    </m.button>
+                </div>
             </> : <>
                 <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.1}}>
                     pick your colors&nbsp;&nbsp;—&nbsp;&nbsp;{SelectedColors.length} / {SelectedCount}
@@ -586,6 +960,135 @@ const Board = () => {
         </m.div>
     )
 
+    const onlineLobbyScreen = () => (
+        <m.div className='overlay' key='online'
+            initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.25}}>
+            <m.div className='gameTitle' initial={{y:-50,opacity:0}} animate={{y:0,opacity:1}} transition={{...spring, delay:0.05}}>
+                CHAIN<span className='titleAccent'>REACTION</span>
+            </m.div>
+
+            {OnlineError &&
+                <div className='onlineErrorBanner'>{OnlineError}</div>
+            }
+
+            {OnlineStage === 'role-select' && <>
+                <m.div className='tagline' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.15}}>
+                    play online
+                </m.div>
+                <m.div className='hint' initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.2}}>
+                    share a short code with your opponent, or enter theirs to join their match
+                </m.div>
+                <div className='startRow'>
+                    <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={startHosting}>HOST</m.button>
+                    <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={startJoining}>JOIN</m.button>
+                </div>
+                <m.button className='sizeBtn' style={{marginTop:20}} whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                    onClick={() => {sfx(playClick); setOnlineStage(null)}}>
+                    back
+                </m.button>
+            </>}
+
+            {OnlineRole === 'host' && OnlineStage === 'config' && <>
+                <div className='tagline'>game mode</div>
+                <div className='sizeRow modeRow'>
+                    {ONLINE_MODES.map(mode => (
+                        <m.button key={mode.id} className={`sizeBtn${GameMode === mode.id ? ' selected' : ''}`}
+                            whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                            onClick={() => {sfx(playClick); setGameMode(mode.id)}}>
+                            {mode.label}
+                        </m.button>
+                    ))}
+                </div>
+                <div className='tagline'>board size</div>
+                <div className='sizeRow'>
+                    {BOARD_SIZES.map(s => (
+                        <m.button key={s} className={`sizeBtn${BoardSize === s ? ' selected' : ''}`}
+                            whileHover={{scale:1.06}} whileTap={{scale:0.94}}
+                            onClick={() => {sfx(playClick); setBoardSize(s)}}>
+                            {s}
+                        </m.button>
+                    ))}
+                </div>
+                <div className='tagline'>your color</div>
+                <div className='colorGrid'>
+                    {PLAYERS.map(p => {
+                        const picked = SelectedColors.includes(p)
+                        return (
+                            <m.button key={p.color} className={`colorChip${picked ? ' picked' : ''}`} style={{'--c':p.color}}
+                                whileHover={{scale:1.12}} whileTap={{scale:0.9}}
+                                onClick={() => toggleColor(p)}
+                                aria-label={p.name} />
+                        )
+                    })}
+                </div>
+                <div className='startRow'>
+                    <m.button className='sizeBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>back</m.button>
+                    <m.button className={`neonBtn startBtn${SelectedColors.length !== 1 ? ' incomplete' : ''}`}
+                        whileHover={{scale:1.08}} whileTap={{scale:0.92}} onClick={hostConfigConfirmed}>
+                        CONTINUE
+                    </m.button>
+                </div>
+            </>}
+
+            {OnlineRole === 'host' && OnlineStage === 'code-display' && <>
+                <div className='tagline'>share this code with your opponent</div>
+                <div className='codeBox short'>{RoomCode}</div>
+                <m.button className='neonBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => copyCode(RoomCode)}>
+                    COPY CODE
+                </m.button>
+                <div className='hint' style={{marginTop:16}}>waiting for your opponent to join…</div>
+                <m.button className='sizeBtn' style={{marginTop:20}} whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>
+                    back
+                </m.button>
+            </>}
+
+            {OnlineRole === 'guest' && OnlineStage === 'join-code' && <>
+                <div className='tagline'>enter the code your opponent sent</div>
+                <input className='codeBox editable short' value={RoomCodeInput} maxLength={ROOM_CODE_LENGTH}
+                    onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+                    placeholder='CODE' autoFocus />
+                <div className='startRow'>
+                    <m.button className='sizeBtn' whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>back</m.button>
+                    <m.button className='neonBtn startBtn' whileHover={{scale:1.08}} whileTap={{scale:0.92}}
+                        onClick={submitRoomCode} disabled={!RoomCodeInput.trim()}>
+                        CONTINUE
+                    </m.button>
+                </div>
+            </>}
+
+            {OnlineStage === 'pick-color' && OnlineRole === 'guest' && <>
+                {HostPreview &&
+                    <div className='hint'>opponent picked <b style={{color:HostPreview.hostColor}}>{HostPreview.hostName}</b> — {HostPreview.mode} mode</div>
+                }
+                <div className='tagline'>pick your color</div>
+                <div className='colorGrid'>
+                    {PLAYERS.filter(p => p.color !== HostPreview?.hostColor).map(p => (
+                        <m.button key={p.color} className='colorChip' style={{'--c':p.color}}
+                            whileHover={{scale:1.12}} whileTap={{scale:0.9}}
+                            onClick={() => confirmGuestColor(p)}
+                            aria-label={p.name} />
+                    ))}
+                </div>
+                <m.button className='sizeBtn' style={{marginTop:20}} whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>
+                    back
+                </m.button>
+            </>}
+            {OnlineStage === 'pick-color' && OnlineRole === 'host' && <>
+                <div className='hint'>waiting for your opponent to pick a color…</div>
+                <m.button className='sizeBtn' style={{marginTop:20}} whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>
+                    back
+                </m.button>
+            </>}
+
+            {OnlineStage === 'connecting' && <>
+                <div className='hint'>connecting…</div>
+                <m.button className='sizeBtn' style={{marginTop:20}} whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={cancelOnline}>
+                    back
+                </m.button>
+            </>}
+        </m.div>
+    )
+
     const winScreen = () => (
         <m.div className='overlay' key='win'
             initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.25}}>
@@ -602,12 +1105,21 @@ const Board = () => {
                     {Winner.members.map(p => <span key={p.color} className='playerDot' style={{'--c':p.color}} />)}
                 </m.div>
             }
-            <m.button className='neonBtn' style={{'--c':Winner.color}}
-                initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.45}}
-                whileHover={{scale:1.08}} whileTap={{scale:0.92}}
-                onClick={() => resetGame()}>
-                PLAY AGAIN
-            </m.button>
+            {OnlineRole && ConnectionState !== 'connected' ? (
+                <div className='hint' style={{marginTop:20}}>{OnlineError || 'connection lost — start a new match to play again'}</div>
+            ) : (
+                <m.button className='neonBtn' style={{'--c':Winner.color}}
+                    initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{...spring, delay:0.45}}
+                    whileHover={{scale:1.08}} whileTap={{scale:0.92}}
+                    onClick={() => OnlineRole ? handlePlayAgainOnline() : resetGame()}>
+                    {OnlineRole && MyRematchReady ? 'WAITING FOR OPPONENT…' : 'PLAY AGAIN'}
+                </m.button>
+            )}
+            {OnlineRole &&
+                <m.button className='sizeBtn' style={{marginTop:14}} whileHover={{scale:1.06}} whileTap={{scale:0.94}} onClick={() => resetGame()}>
+                    main menu
+                </m.button>
+            }
         </m.div>
     )
 
@@ -737,6 +1249,13 @@ const Board = () => {
     return (
         <div className='container' style={{'--turn':currentColor}}>
             <div className='ambientGlow' />
+            {Players.length === 0 && <AmbientOrbs />}
+            {OnlineRole && Players.length > 0 && !Winner && ConnectionState !== 'connected' &&
+                <div className='onlineDisconnectBanner'>
+                    <span>{OnlineError || 'connection lost'}</span>
+                    <button className='menuBtn' onClick={() => resetGame()}>main menu</button>
+                </div>
+            }
             <div className='centerDiv'>
                 <div className='turnBanner' style={{'--c':currentColor}}>
                     {Players.length > 0 && !Winner && (
@@ -762,20 +1281,13 @@ const Board = () => {
                             const cellKey = `${rowindex}-${colindex}`
                             const count = col[0]
                             const ownerColor = col[1]
-                            const n = Math.min(count,3)
-                            const critical = count > 0 && count === criticalMass(rowindex,colindex,BoardRows,BoardColumns)-1
-                            return <div key={cellKey}
-                                    className={InvalidCell === cellKey ? 'block invalid' : 'block'}
-                                    onClick={() => blockClickHandler(rowindex,colindex)}>
-                                {Exploding.has(cellKey) && <span className='burst' />}
-                                {count > 0 &&
-                                    <div className={critical ? 'cluster critical' : 'cluster'}>
-                                        <div className={`orbs n${n}`} style={{'--c':ownerColor}} key={n}>
-                                            {Array.from({length:n}).map((_,q) => <span key={q} className='orb' />)}
-                                        </div>
-                                    </div>
-                                }
-                            </div>
+                            const critical = count > 0 && count === criticalMassGrid[rowindex][colindex] - 1
+                            return <Cell key={cellKey}
+                                row={rowindex} col={colindex}
+                                count={count} ownerColor={ownerColor} critical={critical}
+                                exploding={Exploding.has(cellKey)}
+                                invalid={InvalidCell === cellKey}
+                                onClick={handleCellClick} />
                         })}
                         </div>
                     })
@@ -811,7 +1323,8 @@ const Board = () => {
             <button className='settingsIcon' onClick={() => setShowSettings(true)} aria-label='settings'>&#x2699;</button>
             <LazyMotion features={domAnimation} strict>
                 <AnimatePresence>
-                    {Players.length === 0 && !showTutorial && startScreen()}
+                    {Players.length === 0 && !showTutorial && OnlineStage === null && startScreen()}
+                    {Players.length === 0 && OnlineStage !== null && onlineLobbyScreen()}
                     {Winner && winScreen()}
                     {showSettings && settingsScreen()}
                     {showTutorial && tutorialScreen()}

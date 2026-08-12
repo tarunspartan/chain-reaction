@@ -36,19 +36,27 @@ export const legalMoves = (board, color) => {
     return moves
 }
 
-// apply one explosion wave in place; returns the next unstable set
+// apply one explosion wave in place; returns the next unstable set. Only checks
+// cells touched this wave (not a full-board rescan) — no other cell could have changed
 export const applyWave = (board, unstable, color, rows, cols, capDrop = 0) => {
+    const touched = new Map()
     unstable.forEach(([i,j]) => {
         board[i][j][0] -= criticalMass(i, j, rows, cols, capDrop)
         if (board[i][j][0] <= 0) { board[i][j][0] = 0; board[i][j][1] = null }
+        touched.set(`${i},${j}`, [i, j])
     })
     unstable.forEach(([i,j]) => {
         neighbours(i, j, rows, cols).forEach(([a,b]) => {
             board[a][b][0] += 1
             board[a][b][1] = color
+            touched.set(`${a},${b}`, [a, b])
         })
     })
-    return findUnstable(board, rows, cols, capDrop)
+    const next = []
+    touched.forEach(([i,j]) => {
+        if (board[i][j][0] >= criticalMass(i, j, rows, cols, capDrop)) next.push([i, j])
+    })
+    return next
 }
 
 // fully resolve a move with no animation; returns null if the move is illegal

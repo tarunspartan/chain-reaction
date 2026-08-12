@@ -28,6 +28,41 @@
     pointer-events: none;
 }
 
+/* ambient drifting orb field behind the menus, one per player color */
+.bgOrbField{
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.bgOrb{
+    position: absolute;
+    width: var(--size);
+    height: var(--size);
+    margin: calc(var(--size) / -2) 0 0 calc(var(--size) / -2);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%,
+        color-mix(in srgb, var(--c) 85%, white),
+        var(--c) 45%,
+        transparent 75%);
+    opacity: 0.28;
+    animation: orbDrift 22s var(--delay, 0s) ease-in-out infinite alternate,
+               orbFlare 9s var(--delay, 0s) ease-in-out infinite;
+}
+
+@keyframes orbDrift{
+    0%   { transform: translate(0, 0) scale(1); }
+    50%  { transform: translate(4vmin, -3vmin) scale(1.1); }
+    100% { transform: translate(-3vmin, 3.5vmin) scale(0.92); }
+}
+
+@keyframes orbFlare{
+    0%, 78%, 100% { opacity: 0.28; filter: blur(0px)   drop-shadow(0 0 0 transparent); }
+    86%           { opacity: 0.65; filter: blur(0.5px) drop-shadow(0 0 26px var(--c)); }
+    93%           { opacity: 0.28; filter: blur(0px)   drop-shadow(0 0 0 transparent); }
+}
+
 .centerDiv{
     position: relative;
     z-index: 1;
@@ -41,6 +76,7 @@
 /* progressive screen shake during chain reactions — amplitude via --amp */
 .boardFrame.shaking{
     animation: boardShake 130ms linear infinite;
+    will-change: transform; /* own compositor layer — avoids repainting every cell while shaking */
 }
 
 @keyframes boardShake{
@@ -124,12 +160,25 @@
     background: rgba(255,255,255,0.015);
     border: 1px solid color-mix(in srgb, var(--turn) 28%, transparent);
     box-shadow: inset 0 0 12px rgba(0,0,0,0.5);
-    transition: border-color 400ms ease, background-color 150ms ease;
+    transition: border-color 400ms ease;
     -webkit-tap-highlight-color: transparent;
+    contain: layout paint; /* isolates paint/layout from sibling cells on big boards */
 }
 
-.block:hover{
+/* opacity-only hover overlay — background-color can't be GPU-composited, opacity can */
+.block::before{
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
     background: color-mix(in srgb, var(--turn) 7%, transparent);
+    opacity: 0;
+    transition: opacity 150ms ease;
+    pointer-events: none;
+}
+
+.block:hover::before{
+    opacity: 1;
 }
 
 /* clicking a cell you don't own */
@@ -156,6 +205,7 @@
 
 .cluster.critical{
     animation: tremble 0.22s linear infinite;
+    will-change: transform;
 }
 
 .orbs{
@@ -165,6 +215,7 @@
 
 .orbs.n2, .orbs.n3{
     animation: spin 5s linear infinite;
+    will-change: transform;
 }
 
 .orb{
@@ -180,6 +231,7 @@
         0 0 9px color-mix(in srgb, var(--c) 75%, transparent),
         0 0 22px color-mix(in srgb, var(--c) 30%, transparent);
     animation: pop 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    will-change: transform;
 }
 
 .orbs.n1 .orb{ left: 14px; top: 14px; }
@@ -200,6 +252,7 @@
     box-shadow: 0 0 18px var(--turn), inset 0 0 12px var(--turn);
     animation: burst 220ms ease-out forwards;
     pointer-events: none;
+    will-change: transform, opacity;
 }
 
 @keyframes pop{
@@ -362,6 +415,105 @@
     color: #d6e6ff;
 }
 
+.startRow .howToBtn{
+    margin-top: 0;
+}
+
+/* ============ online play ============ */
+
+.codeBox{
+    width: min(420px, 86vw);
+    height: 92px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(10, 14, 26, 0.9);
+    border: 2px solid #2a3556;
+    color: #9fb4ff;
+    font-family: 'Chakra Petch', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    resize: none;
+    word-break: break-all;
+}
+
+.codeBox.editable{
+    color: #e8ecf5;
+    transition: border-color 150ms ease;
+}
+
+.codeBox.editable:focus{
+    outline: none;
+    border-color: #4da6ff;
+}
+
+.codeBox::placeholder{
+    color: #56618a;
+}
+
+/* the short room code — big, centered and spaced out instead of the blob layout above */
+.codeBox.short{
+    height: auto;
+    padding: 16px 20px;
+    font-family: 'Bungee', 'Chakra Petch', monospace;
+    font-size: 32px;
+    letter-spacing: 10px;
+    text-align: center;
+    word-break: normal;
+}
+
+.onlineErrorBanner{
+    max-width: min(420px, 86vw);
+    margin-top: 18px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: rgba(255, 70, 85, 0.12);
+    border: 1px solid rgba(255, 70, 85, 0.45);
+    color: #ff9aa3;
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.5;
+}
+
+.onlineDisconnectBanner{
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px 8px 18px;
+    border-radius: 999px;
+    background: rgba(255, 70, 85, 0.15);
+    border: 1px solid rgba(255, 70, 85, 0.5);
+    color: #ff9aa3;
+    font-family: 'Chakra Petch', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-align: center;
+    max-width: 90vw;
+}
+
+.onlineDisconnectBanner .menuBtn{
+    flex-shrink: 0;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: rgba(255, 70, 85, 0.25);
+    border: 1px solid rgba(255, 70, 85, 0.7);
+    color: #fff;
+    font-family: 'Chakra Petch', sans-serif;
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
 .playerStatus{
     display: flex;
     justify-content: center;
@@ -479,16 +631,50 @@
         0 0 18px rgba(120,150,255,0.55),
         0 0 60px rgba(80,110,255,0.3);
     user-select: none;
+    animation: titleBreathe 5s ease-in-out infinite;
+}
+
+@keyframes titleBreathe{
+    0%, 100% { text-shadow: 0 0 18px rgba(120,150,255,0.55), 0 0 60px rgba(80,110,255,0.3); }
+    50%      { text-shadow: 0 0 26px rgba(120,150,255,0.8),  0 0 80px rgba(80,110,255,0.45); }
 }
 
 .titleAccent{
     display: block;
-    background: linear-gradient(90deg, #4da6ff, #00e5ff);
+    background: linear-gradient(100deg, #4da6ff, #00e5ff, #4da6ff);
+    background-size: 220% 100%;
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
     text-shadow: none;
     filter: drop-shadow(0 0 14px rgba(80,160,255,0.4));
+    animation: accentShift 6s ease-in-out infinite;
+}
+
+@keyframes accentShift{
+    0%, 100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+
+.onlineCta{
+    margin-top: 22px;
+    font-size: 15px;
+    padding: 12px 34px;
+    animation: ctaPulse 2.6s ease-in-out infinite;
+}
+
+@keyframes ctaPulse{
+    0%, 100% { box-shadow: 0 0 12px color-mix(in srgb, var(--c) 22%, transparent); }
+    50%      { box-shadow: 0 0 24px color-mix(in srgb, var(--c) 55%, transparent); }
+}
+
+.divider{
+    margin-top: 16px;
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #56618a;
+    user-select: none;
 }
 
 .tagline{
@@ -535,6 +721,36 @@
     color: #070a12;
     background: #4da6ff;
     box-shadow: 0 0 16px rgba(77,166,255,0.45);
+}
+
+/* distinct from .sizeBtn so a difficulty level doesn't read as just another game mode */
+.diffBtn{
+    font-family: 'Chakra Petch', sans-serif;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 16px;
+    border-radius: 6px;
+    background: rgba(10, 14, 26, 0.6);
+    border: 1px dashed #3a4a7d;
+    color: #6f7dab;
+    cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.diffBtn:hover{
+    border-color: #ffd234;
+    color: #d6e6ff;
+}
+
+.diffBtn.selected{
+    border-style: solid;
+    border-color: #ffd234;
+    color: #070a12;
+    background: #ffd234;
+    box-shadow: 0 0 14px rgba(255,210,52,0.45);
 }
 
 .countRow{
@@ -641,12 +857,14 @@
 .hint{
     margin-top: 34px;
     font-size: 11px;
+    line-height: 1.7;
     letter-spacing: 3px;
     text-transform: uppercase;
     color: #8e9ac0;
     text-align: center;
     padding: 0 16px;
     user-select: none;
+    min-height: 3.4em; /* reserves 2 lines so switching modes never shifts the buttons below */
 }
 
 /* ============ win screen ============ */
@@ -866,7 +1084,11 @@ button:focus-visible{
     .footerDot,
     .winOrb,
     .boardFrame.shaking,
-    .booyah{
+    .booyah,
+    .bgOrb,
+    .gameTitle,
+    .titleAccent,
+    .onlineCta{
         animation: none;
     }
 }

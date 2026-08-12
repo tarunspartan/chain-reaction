@@ -15,7 +15,8 @@
   "dependencies": {
     "motion": "^12.40.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "trystero": "^0.25.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.2",
