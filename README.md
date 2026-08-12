@@ -20,6 +20,10 @@ A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 t
 | --- | --- |
 | ![Four-player teams game with grouped player dots](docs/mode-teams.png) | ![Win screen showing the winning color](docs/win-screen.png) |
 
+| Online play — host sharing their room code |
+| --- |
+| ![Host screen showing a short room code to share with the other player](docs/online-lobby.png) |
+
 ## ✨ Features
 
 - **2–8 players** (pass & play) — pick your own color; turn order follows your picks
@@ -27,6 +31,7 @@ A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 t
 - **Three board sizes** — Small (6×8), Medium (9×12), or Large (fills your screen)
 - **Animated chain reactions** — explosion shockwaves resolve in accelerating waves with growing screen shake; orbs tremble when a cell is one orb from critical mass
 - **Elimination play** — lose all your orbs and you're out; your turn is skipped; last player standing wins
+- **Online play** — host or join a match across devices with a single short room code, peer-to-peer, no account and no dedicated backend
 - **Dark neon UI** — the board glow always shows whose turn it is
 - **Synthesized sound** — explosions get louder and brighter as chains deepen (Web Audio, zero assets)
 - **PWA** — install it on your phone or desktop and play offline
@@ -42,6 +47,10 @@ A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 t
 | **Sudden Death** | Long games go to overtime — when the countdown ends, whoever holds the most orbs wins (ties play on) |
 | **Teams** | 4/6/8 players in two teams (odd picks vs even picks) — eliminate the whole other side |
 
+## 🌐 Online Play
+
+Classic, Blitz and Sudden Death can all be played across devices, 2 players only. One player hosts — picking mode, board size and color — and gets a short 5-character room code to share however they'd like (text, Discord, in person). The other player enters that code and the two connect directly, peer-to-peer, over WebRTC. Matchmaking is handled by [Trystero](https://github.com/dmotz/trystero), which uses the public Nostr relay network purely to help the two browsers find each other — no account, no server of ours in the loop, and gameplay itself never touches it.
+
 ## 🎮 How to Play
 
 Players take turns placing orbs in empty cells or cells they already own. Every cell has a **critical mass** — 2 in corners, 3 on edges, 4 in the center. When a cell reaches it, it **explodes**, throwing one orb into each neighbouring cell and **capturing** any opponent orbs there. Captured cells can explode too, setting off massive chain reactions.
@@ -55,6 +64,7 @@ A player who loses every orb is eliminated. Outlast everyone to win.
 | Framework | [React 19](https://react.dev/) |
 | Build tool | [Vite 8](https://vitejs.dev/) |
 | Animation | [Motion](https://motion.dev/) (LazyMotion + CSS transforms for the board) |
+| Multiplayer networking | [Trystero](https://github.com/dmotz/trystero) (serverless WebRTC matchmaking over public Nostr relays) |
 | PWA | [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) (Workbox service worker) |
 | Fonts | Bungee + Chakra Petch |
 
@@ -84,12 +94,6 @@ Every push and pull request runs the [CI/CD workflow](.github/workflows/ci.yml) 
 - **PR previews** — every pull request gets its own build deployed to `gh-pages` under `preview/pr-<number>/`, viewable at `https://tarunspartan.github.io/chain-reaction/preview/pr-<number>/` (link printed in the run summary). The preview is removed automatically when the PR closes.
 
 > One-time setup: in the repo's **Settings → Pages**, set the source to **Deploy from a branch** → `gh-pages`. The `npm run deploy` script still works as a manual fallback.
-
-## 🗺️ Roadmap Ideas
-
-- **Online multiplayer** — rooms & websockets for play across devices
-- **Daily Puzzle** — fixed positions to crack in X moves
-- **Stats & streaks** — local win tracking per color
 
 ## 🙏 Credits
 
