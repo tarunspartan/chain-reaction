@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/chain-reaction/preview/pr-39/sw.js', { scope: '/chain-reaction/preview/pr-39/' })})}
