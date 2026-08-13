@@ -158,11 +158,13 @@
     border-radius: 9px;
     cursor: pointer;
     background: rgba(255,255,255,0.015);
-    border: 1px solid color-mix(in srgb, var(--turn) 28%, transparent);
+    /* static, not tied to --turn: on a large board, retinting every cell's border
+       on every turn change was a measured ~45% main-thread cost spike per move —
+       whose-turn-it-is is already shown by .turnBanner, .ambientGlow and the active player dot */
+    border: 1px solid #2a3556;
     box-shadow: inset 0 0 12px rgba(0,0,0,0.5);
-    transition: border-color 400ms ease;
     -webkit-tap-highlight-color: transparent;
-    contain: layout paint; /* isolates paint/layout from sibling cells on big boards */
+    contain: strict; /* size is fixed, so this also skips a layout-dependency check vs layout+paint alone */
 }
 
 /* opacity-only hover overlay — background-color can't be GPU-composited, opacity can */

@@ -3,7 +3,7 @@ import { LazyMotion, domAnimation, m, AnimatePresence } from 'motion/react'
 import './Board.css'
 import drop from './drop.mp3'
 import { playExplosion, playWin, playClick, playDenied } from './sounds'
-import { criticalMass, neighbours, cloneBoard, findUnstable, applyWave, orbCounts, legalMoves } from './engine'
+import { criticalMass, neighbours, findUnstable, applyWave, orbCounts, legalMoves } from './engine'
 import { chooseMove, PERSONAS, speak } from './ai'
 import { joinRoom } from 'trystero'
 import { APP_ID, ACTION_ID, ROOM_CODE_LENGTH, generateRoomCode, normalizeRoomCode } from './trystero'
@@ -112,6 +112,29 @@ const Cell = memo(({ row, col, count, ownerColor, critical, exploding, invalid, 
         </div>
     )
 })
+
+// stable shared reference for rows with no exploding cells, so they don't look
+// "changed" to BoardRow's memo just because a new (still-empty) Set was created
+const EMPTY_SET = new Set()
+
+// memoized per row: rowCells only gets a new array reference when one of ITS
+// cells actually changed (see the row-preserving updates in blockClickHandler),
+// so a single click only walks/diffs the ~1-2 rows it touched, not the whole
+// board — without this, every click re-creates all N cell elements even though
+// Cell itself bails, because building those N element descriptors is real work
+const BoardRow = memo(({ rowIndex, rowCells, criticalMassRow, explodingCols, invalidCol, onCellClick }) => (
+    <div className='boardRow'>
+        {rowCells.map((cell, colIndex) => (
+            <Cell key={colIndex}
+                row={rowIndex} col={colIndex}
+                count={cell[0]} ownerColor={cell[1]}
+                critical={cell[0] > 0 && cell[0] === criticalMassRow[colIndex] - 1}
+                exploding={explodingCols.has(colIndex)}
+                invalid={invalidCol === colIndex}
+                onClick={onCellClick} />
+        ))}
+    </div>
+))
 
 const Board = () => {
 
@@ -237,12 +260,6 @@ const Board = () => {
         }
     }
 
-    // a player is out once they have made a move and own no orbs anymore
-    const alivePlayers = (board) => {
-        const counts = orbCounts(board)
-        return Players.filter(p => !movedRef.current[p.color] || (counts[p.color] || 0) > 0)
-    }
-
     // classic: last player standing; teams: last team standing
     const winnerOf = (alive) => {
         if(alive.length === 0) return null
@@ -346,9 +363,18 @@ const Board = () => {
             setMovesCount(movesRef.current)
             if(OnlineRole && !fromRemote) sendMessage({ type: 'move', x, y, seq: movesRef.current })
 
-            let board = cloneBoard(BoardArray)
+            // only the placed cell's row gets a new array reference — every other row
+            // keeps its old reference so BoardRow's memo can skip untouched rows entirely
+            let board = BoardArray.map((row, i) => i === x ? row.map(cell => [...cell]) : row)
             board[x][y] = [board[x][y][0]+1, player.color]
-            setBoardArray(cloneBoard(board))
+            setBoardArray(board)
+
+            // per-color orb tally, updated incrementally wave-by-wave below instead of
+            // rescanning the whole board every wave — a full orbCounts() pass is O(board
+            // size), and on a large board that ran on every single wave of every chain
+            let colorCounts = orbCounts(board)
+            // a player is out once they've made a move and own no orbs anymore
+            const aliveFrom = (counts) => Players.filter(p => !movedRef.current[p.color] || (counts[p.color] || 0) > 0)
 
             // chain waves get faster, louder and shakier the deeper they go
             let unstable = findUnstable(board, BoardRows, BoardColumns)
@@ -357,18 +383,40 @@ const Board = () => {
                 setExploding(new Set(unstable.map(([i,j]) => `${i}-${j}`)))
                 setShakeAmp(Math.min(0.8 + wave * 0.6, 5))
                 await sleep(Math.max(90, 220 - wave * 15))
+                // cells touched this wave: exploding cells plus the neighbours they feed —
+                // deduped (a cell can be fed by two exploding neighbours in the same wave)
+                // so its pre-wave value is only snapshotted once, not clobbered mid-loop
+                const touched = new Map()
+                unstable.forEach(([i,j]) => {
+                    touched.set(`${i},${j}`, [i,j])
+                    neighbours(i, j, BoardRows, BoardColumns).forEach(([a,b]) => touched.set(`${a},${b}`, [a,b]))
+                })
+                const touchedRows = new Set([...touched.values()].map(([i]) => i))
+                // copy [count,owner] out by value — board[i][j] is mutated in place by
+                // applyWave below, so keeping a reference here would "snapshot" the after-state
+                const preWave = new Map([...touched].map(([k,[i,j]]) => [k, [board[i][j][0], board[i][j][1]]]))
+
                 unstable = applyWave(board, unstable, player.color, BoardRows, BoardColumns)
-                setBoardArray(cloneBoard(board))
+
+                touched.forEach(([i,j], key) => {
+                    const [oldCount, oldOwner] = preWave.get(key)
+                    const [newCount, newOwner] = board[i][j]
+                    if(oldOwner) colorCounts[oldOwner] = (colorCounts[oldOwner] || 0) - oldCount
+                    if(newOwner) colorCounts[newOwner] = (colorCounts[newOwner] || 0) + newCount
+                })
+
+                board = board.map((row, i) => touchedRows.has(i) ? [...row] : row)
+                setBoardArray(board)
                 setExploding(new Set())
                 sfx(playExplosion, wave)
-                const win = winnerOf(alivePlayers(board))
+                const win = winnerOf(aliveFrom(colorCounts))
                 if(win) return finishGame(win)
                 wave += 1
                 if(wave > 250) break // safety net for saturated boards
             }
             setShakeAmp(0)
 
-            const alive = alivePlayers(board)
+            const alive = aliveFrom(colorCounts)
             const deadColors = Players.filter(p => !alive.includes(p)).map(p => p.color)
             const newlyDead = deadColors.filter(c => !eliminatedRef.current.includes(c))
             eliminatedRef.current = deadColors
@@ -400,9 +448,8 @@ const Board = () => {
                     overtimeRef.current = Math.max(0, overtimeRef.current - 1)
                     setOvertimeLeft(overtimeRef.current)
                     if(overtimeRef.current === 0){
-                        const counts = orbCounts(board)
-                        const best = Math.max(...alive.map(p => counts[p.color] || 0))
-                        const leaders = alive.filter(p => (counts[p.color] || 0) === best)
+                        const best = Math.max(...alive.map(p => colorCounts[p.color] || 0))
+                        const leaders = alive.filter(p => (colorCounts[p.color] || 0) === best)
                         if(leaders.length === 1) return finishGame(leaders[0])
                         // tied — play on until someone takes the lead
                     }
@@ -439,6 +486,21 @@ const Board = () => {
         return Array.from({length: BoardRows}, (_,i) =>
             Array.from({length: BoardColumns}, (_,j) => criticalMass(i, j, BoardRows, BoardColumns)))
     },[BoardRows, BoardColumns])
+
+    // exploding cells grouped by row, so a wave only breaks BoardRow's memo for the
+    // handful of rows actually mid-explosion — rows with none reuse the same EMPTY_SET
+    // reference every time, rather than every row seeing a "changed" Set prop
+    const explodingByRow = useMemo(() => {
+        if(Exploding.size === 0) return null
+        const map = new Map()
+        Exploding.forEach(key => {
+            const [r, c] = key.split('-').map(Number)
+            if(!map.has(r)) map.set(r, new Set())
+            map.get(r).add(c)
+        })
+        return map
+    },[Exploding])
+    const [invalidRow, invalidColNum] = InvalidCell ? InvalidCell.split('-').map(Number) : [-1, -1]
 
     useEffect(() => {
         if(!PendingRemoteMove) return
@@ -1275,22 +1337,15 @@ const Board = () => {
                 <div className='boardScaleInner' style={{ width: BoardColumns*50, height: BoardRows*50, transform: `scale(${BoardScale})`, transformOrigin: 'top left' }}>
                 <div className={ShakeAmp > 0 ? 'boardFrame shaking' : 'boardFrame'} style={{'--amp':`${ShakeAmp}px`, width: BoardColumns*50}}>
                 {
-                    BoardArray.map((row,rowindex) => {
-                        return <div key={rowindex} className='boardRow'>
-                        {row.map((col,colindex) => {
-                            const cellKey = `${rowindex}-${colindex}`
-                            const count = col[0]
-                            const ownerColor = col[1]
-                            const critical = count > 0 && count === criticalMassGrid[rowindex][colindex] - 1
-                            return <Cell key={cellKey}
-                                row={rowindex} col={colindex}
-                                count={count} ownerColor={ownerColor} critical={critical}
-                                exploding={Exploding.has(cellKey)}
-                                invalid={InvalidCell === cellKey}
-                                onClick={handleCellClick} />
-                        })}
-                        </div>
-                    })
+                    BoardArray.map((row,rowindex) => (
+                        <BoardRow key={rowindex}
+                            rowIndex={rowindex}
+                            rowCells={row}
+                            criticalMassRow={criticalMassGrid[rowindex]}
+                            explodingCols={explodingByRow?.get(rowindex) || EMPTY_SET}
+                            invalidCol={rowindex === invalidRow ? invalidColNum : -1}
+                            onCellClick={handleCellClick} />
+                    ))
                 }
                 </div>
                 </div>
