@@ -1,1 +1,0 @@
-if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/chain-reaction/sw.js', { scope: '/chain-reaction/' })})}

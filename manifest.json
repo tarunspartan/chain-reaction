@@ -1,6 +1,6 @@
 {
   "name": "Chain Reaction",
-  "short_name": "Chain Rxn",
+  "short_name": "Chain Reaction",
   "id": "chainreaction",
   "description": "Place orbs, trigger explosive chain reactions and knock everyone else off the board. Play pass-and-play on one device, against the CPU, or online with up to 8 friends over a short room code.",
   "icons": [
@@ -65,6 +65,13 @@
   "edge_side_panel": {
     "preferred_width": 480
   },
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://tarunspartan.github.io/chain-reaction/manifest.json"
+    }
+  ],
+  "prefer_related_applications": false,
   "handle_links": "preferred",
   "shortcuts": [
     {
