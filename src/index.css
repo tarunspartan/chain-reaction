@@ -1,3 +1,40 @@
+/* Self-hosted rather than pulled from Google Fonts. The stylesheet link was a
+   render-blocking request to a third party — two DNS+TLS handshakes before the first
+   pixel — and because it lived on another origin the service worker never precached
+   it, so an offline launch of the installed app had no fonts at all. Latin subsets
+   only (the UI is English), 52 KB for all four faces. */
+@font-face{
+  font-family: 'Bungee';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/chain-reaction/fonts/bungee-400.woff2') format('woff2');
+}
+
+@font-face{
+  font-family: 'Chakra Petch';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/chain-reaction/fonts/chakra-petch-400.woff2') format('woff2');
+}
+
+@font-face{
+  font-family: 'Chakra Petch';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/chain-reaction/fonts/chakra-petch-600.woff2') format('woff2');
+}
+
+@font-face{
+  font-family: 'Chakra Petch';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/chain-reaction/fonts/chakra-petch-700.woff2') format('woff2');
+}
+
 *{
   box-sizing: border-box;
 }
