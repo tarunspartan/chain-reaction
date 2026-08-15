@@ -1,6 +1,6 @@
 {
-  "name": "Chain Reaction",
-  "short_name": "Chain Reaction",
+  "name": "Chain Reaction PWA",
+  "short_name": "Chain Reaction PWA",
   "id": "chainreaction",
   "description": "Place orbs, trigger explosive chain reactions and knock everyone else off the board. Play pass-and-play on one device, against the CPU, or online with up to 8 friends over a short room code.",
   "icons": [
