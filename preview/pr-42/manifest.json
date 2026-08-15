@@ -1,0 +1,91 @@
+{
+  "name": "Chain Reaction",
+  "short_name": "Chain Rxn",
+  "id": "chainreaction",
+  "description": "Place orbs, trigger explosive chain reactions and knock everyone else off the board. Play pass-and-play on one device, against the CPU, or online with up to 8 friends over a short room code.",
+  "icons": [
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "logo-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": ".",
+  "scope": "/chain-reaction/",
+  "lang": "en",
+  "dir": "ltr",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui",
+    "browser"
+  ],
+  "theme_color": "#070a12",
+  "background_color": "#070a12",
+  "orientation": "any",
+  "categories": [
+    "games",
+    "entertainment"
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  },
+  "screenshots": [
+    {
+      "src": "screenshot.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Choose a mode, board size and how many players"
+    },
+    {
+      "src": "screenshot-narrow.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "A three-player match mid-chain-reaction"
+    }
+  ],
+  "edge_side_panel": {
+    "preferred_width": 480
+  },
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://tarunspartan.github.io/chain-reaction/manifest.json"
+    }
+  ],
+  "prefer_related_applications": false,
+  "handle_links": "preferred",
+  "shortcuts": [
+    {
+      "name": "Play online",
+      "short_name": "Online",
+      "description": "Host a room or join one with a code",
+      "url": "./?tab=online",
+      "icons": [
+        {
+          "src": "logo192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}
