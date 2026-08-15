@@ -255,7 +255,7 @@ const Home = ({ initial, sfx, onStartLocal, onHost, onJoin, onHowTo, connecting,
                         initial={{opacity:0, scale:0.9}} animate={{opacity:1, scale:1}} transition={spring}
                         whileHover={{scale:1.06}} whileTap={{scale:0.94}}
                         onClick={() => {sfx(); onInstall()}}>
-                        <span role='img' aria-label='install'>⬇</span>&nbsp;install app
+                        <span role='img' aria-label='install'>⬇</span>&nbsp;add to home screen
                     </m.button>
                 }
             </div>
