@@ -8,9 +8,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      // the default injects a blocking <script> in the head; nothing on the first paint
-      // depends on the service worker, so let it register after the document parses
-      injectRegister: 'script-defer',
+      // Inline rather than a separate <script src>: the registration is a few lines that
+      // only attach a load listener, so putting them in the document costs nothing and
+      // saves a request. It also makes the registration visible in the HTML source —
+      // scanners (PWABuilder among them) look there and report "no service worker" when
+      // the call is hidden behind an external, deferred file.
+      injectRegister: 'inline',
       // the hand-written manifest in public/manifest.json is kept as-is
       manifest: false,
       includeAssets: ['favicon.ico', 'logo192.png', 'logo512.png', 'manifest.json'],
