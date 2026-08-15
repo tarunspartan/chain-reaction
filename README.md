@@ -8,9 +8,9 @@ A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 t
 
 ## 📸 Screenshots
 
-| Start screen — pick mode, board size and players | vs CPU — REX talks trash |
+| Menu — local or online, mode, board size and players | vs CPU — REX talks trash |
 | --- | --- |
-| ![Start screen with game mode, board size and player count selection](docs/start-screen.png) | ![vs CPU game with REX speech bubble](docs/mode-cpu.png) |
+| ![Menu screen with local and online tabs, game mode, CPU difficulty, board size and player count](docs/start-screen.png) | ![vs CPU game with REX speech bubble](docs/mode-cpu.png) |
 
 | Blitz — beat the turn timer | Sudden Death — every fuse shortens |
 | --- | --- |
@@ -20,9 +20,9 @@ A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 t
 | --- | --- |
 | ![Four-player teams game with grouped player dots](docs/mode-teams.png) | ![Win screen showing the winning color](docs/win-screen.png) |
 
-| Online play — host sharing their room code |
+| Online lobby — room code, colours and ready state |
 | --- |
-| ![Host screen showing a short room code to share with the other player](docs/online-lobby.png) |
+| ![Online lobby showing the room code and invite button, three players with their colours and ready tags, host-controlled mode and board size, and a lit-up start button](docs/online-lobby.png) |
 
 ## ✨ Features
 

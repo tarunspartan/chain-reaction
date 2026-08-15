@@ -120,21 +120,29 @@ const Lobby = ({ lobby, myId, isHost, code, connecting, error, sfx,
                     leave
                 </m.button>
                 {isHost
-                    ? <m.button className={`neonBtn startBtn${blocker ? ' incomplete' : ''}`}
-                        whileHover={{scale:1.08}} whileTap={{scale:0.92}}
+                    /* "everyone's in" used to be signalled by the button merely stopping
+                       being greyed out — an absence. Once the room is ready it lights up
+                       and says so, so the host doesn't have to audit the roster to notice */
+                    /* The label stays put: swapping in a longer one grew the button and
+                       shoved the row sideways, and on a phone it would overflow it. The
+                       news goes in the status line, which has room for a sentence. */
+                    ? <m.button className={`neonBtn startBtn goBtn${blocker ? ' holding' : ' allReady'}`}
+                        whileHover={blocker ? undefined : {scale:1.08}} whileTap={blocker ? undefined : {scale:0.92}}
                         onClick={() => {sfx(); onStart()}} disabled={!!blocker}>
                         {matchRunning ? 'RESTART' : 'START MATCH'}
                     </m.button>
+                    /* the label says what the tap does, not what you already are — the
+                       ready state is shown by the tag on your row and the line below */
                     : <m.button className={`neonBtn startBtn readyBtn${me?.ready ? ' isReady' : ' waiting'}`}
                         whileHover={{scale:1.08}} whileTap={{scale:0.92}}
                         onClick={() => {sfx(); onReady(!me?.ready)}}>
-                        {me?.ready ? "I'M READY ✓" : 'READY UP'}
+                        {me?.ready ? 'CANCEL' : 'READY'}
                     </m.button>}
             </div>
-            <div className='hint lobbyStatus'>
+            <div className={`hint lobbyStatus${isHost && !blocker ? ' allReady' : ''}`}>
                 {isHost
-                    ? (blocker || 'everyone is ready — start when you are')
-                    : (me?.ready ? 'waiting for the host to start' : 'tap a color to ready up')}
+                    ? (blocker || `everyone's in — all ${lobby.players.length} players ready`)
+                    : (me?.ready ? 'waiting for the host to start' : 'tap a color to get ready')}
             </div>
         </m.div>
     )

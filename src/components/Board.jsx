@@ -8,7 +8,7 @@ import { chooseMove, PERSONAS, speak } from './ai'
 import { TURN_SECONDS, computeMaxDims, makeBoard, playerByColor, sizeDims } from './constants'
 import { MSG, ROOM_PARAM, boardChecksum, codeFromUrl, createOrderQueue, inviteText, inviteUrl } from './protocol'
 import { useOnlineRoom } from './online'
-import { manualInstallHint, useInstallPrompt } from './install'
+import { IOS_INSTALL_HINT, useInstallPrompt } from './install'
 import Home from './screens/Home'
 import Lobby from './screens/Lobby'
 import Win from './screens/Win'
@@ -867,12 +867,11 @@ const Board = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     },[online.active])
 
-    // one tap when the browser handed us a prompt; otherwise tell them where their
-    // browser keeps it, which is the only thing left that actually helps
+    // one tap where the browser gave us a prompt; on iOS the share sheet is the route
     const installApp = () => {
         pwa.install().then(outcome => {
             if(outcome === 'accepted') showToast('ADDING TO YOUR HOME SCREEN…', '#3df56e')
-            else if(outcome === 'manual') showToast(manualInstallHint(), '#00e5ff', 6000)
+            else if(outcome === 'manual') showToast(IOS_INSTALL_HINT, '#00e5ff', 6000)
         })
     }
 
