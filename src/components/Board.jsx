@@ -8,7 +8,7 @@ import { chooseMove, PERSONAS, speak } from './ai'
 import { TURN_SECONDS, computeMaxDims, makeBoard, playerByColor, sizeDims } from './constants'
 import { MSG, ROOM_PARAM, boardChecksum, codeFromUrl, createOrderQueue, inviteText, inviteUrl } from './protocol'
 import { useOnlineRoom } from './online'
-import { useInstallPrompt } from './install'
+import { manualInstallHint, useInstallPrompt } from './install'
 import Home from './screens/Home'
 import Lobby from './screens/Lobby'
 import Win from './screens/Win'
@@ -246,10 +246,10 @@ const Board = () => {
     const sfx = (fn, ...args) => soundStatus === 'on' && fn(...args)
     const menuSfx = (kind) => sfx(kind === 'denied' ? playDenied : playClick)
 
-    const showToast = (text, color) => {
+    const showToast = (text, color, ms = 2600) => {
         setToast({ text, color })
         clearTimeout(toastTimerRef.current)
-        toastTimerRef.current = setTimeout(() => setToast(null), 2600)
+        toastTimerRef.current = setTimeout(() => setToast(null), ms)
     }
 
     const closeTutorial = () => setShowTutorial(false)
@@ -867,13 +867,12 @@ const Board = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     },[online.active])
 
+    // one tap when the browser handed us a prompt; otherwise tell them where their
+    // browser keeps it, which is the only thing left that actually helps
     const installApp = () => {
-        if(pwa.iosHint){
-            showToast('SHARE → ADD TO HOME SCREEN', '#00e5ff')
-            return
-        }
         pwa.install().then(outcome => {
-            if(outcome === 'accepted') showToast('INSTALLING…', '#3df56e')
+            if(outcome === 'accepted') showToast('ADDING TO YOUR HOME SCREEN…', '#3df56e')
+            else if(outcome === 'manual') showToast(manualInstallHint(), '#00e5ff', 6000)
         })
     }
 
@@ -951,6 +950,11 @@ const Board = () => {
                     <button className='menuBtn' onClick={leaveEverything}>main menu</button>
                 </div>
             }
+            {/* No match, no board. The menu scrim is translucent so the ambient orbs can
+                drift behind it, which also meant an empty grid and the footer wordmark
+                showed through every menu — and it was a few hundred DOM nodes rendered
+                for something nobody was playing. */}
+            {inMatch &&
             <div className='centerDiv'>
                 <div className='turnBanner' style={{'--c':currentColor}}>
                     {turnBanner()}
@@ -1002,6 +1006,7 @@ const Board = () => {
                     </div>
                 </div>
             </div>
+            }
             <button className='settingsIcon' onClick={() => setShowSettings(true)} aria-label='settings'>&#x2699;</button>
             <LazyMotion features={domAnimation} strict>
                 <AnimatePresence>
@@ -1016,7 +1021,7 @@ const Board = () => {
                             onStartLocal={startLocal}
                             onHost={online.host}
                             onJoin={online.join}
-                            canInstall={pwa.canInstall || pwa.iosHint}
+                            canInstall={pwa.canInstall}
                             onInstall={installApp}
                             onHowTo={() => setShowTutorial(true)} />
                     }
@@ -1050,11 +1055,12 @@ const Board = () => {
                     {showSettings &&
                         <SettingsPanel key='settings'
                             soundOn={soundStatus === 'on'}
-                            inMatch={inMatch && OnlineMatch}
-                            canInstall={pwa.canInstall || pwa.iosHint}
+                            inMatch={inMatch}
+                            inRoom={online.active}
+                            canInstall={pwa.canInstall}
                             onInstall={() => {installApp(); setShowSettings(false)}}
                             onToggleSound={soundButtonHandler}
-                            onMainMenu={leaveEverything}
+                            onLeave={leaveEverything}
                             onTutorial={() => {setShowTutorial(true); setShowSettings(false)}}
                             onShare={share}
                             onClose={() => setShowSettings(false)} />

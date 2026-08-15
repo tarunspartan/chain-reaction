@@ -1,10 +1,13 @@
-// "Install this as an app" — the browser decides when a site is installable and fires
-// beforeinstallprompt; there's no way to summon that dialog otherwise. So we stash the
-// event and put a button in front of it, which is the only supported way to let someone
-// ask for the install rather than waiting for the browser's own banner.
+// "Add this to my home screen" — the browser decides when to fire beforeinstallprompt,
+// and there is no way to summon that dialog otherwise. So we stash the event and put a
+// button in front of it.
 //
-// iOS is the exception: Safari has never implemented beforeinstallprompt, and the only
-// route is Share → Add to Home Screen. There we show the instruction instead.
+// The catch: plenty of perfectly normal states never produce that event — the game is
+// already installed, the browser is Safari or Firefox, or Chrome simply hasn't offered
+// yet. Hiding the button in those cases means a player who wants the game on their home
+// screen is told nothing at all. So the button is always there (unless we're already
+// running as an installed app) and falls back to telling them where their browser keeps
+// the option.
 
 import { useCallback, useEffect, useState } from 'react'
 
@@ -13,12 +16,26 @@ export const isStandalone = () =>
     window.matchMedia?.('(display-mode: minimal-ui)').matches ||
     window.navigator.standalone === true // iOS Safari's own flag
 
+const ua = () => window.navigator.userAgent
+
 const isIos = () =>
-    /iphone|ipad|ipod/i.test(window.navigator.userAgent) ||
+    /iphone|ipad|ipod/i.test(ua()) ||
     // iPadOS 13+ reports itself as a Mac; the touch points give it away
     (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1)
 
-const isSafari = () => /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(window.navigator.userAgent)
+const isAndroid = () => /android/i.test(ua())
+const isSafari = () => /^((?!chrome|android|crios|fxios|edgios|edg).)*safari/i.test(ua())
+const isFirefox = () => /firefox|fxios/i.test(ua())
+
+// where this particular browser hides the option, for when there's no prompt to fire
+export const manualInstallHint = () => {
+    if(isIos()) return 'TAP SHARE, THEN "ADD TO HOME SCREEN"'
+    if(isSafari()) return 'SAFARI MENU: FILE → ADD TO DOCK'
+    if(isAndroid()) return 'BROWSER MENU ⋮ → ADD TO HOME SCREEN'
+    if(isFirefox()) return 'FIREFOX CAN\'T INSTALL THIS — TRY CHROME OR EDGE'
+    // Chromium desktop: address-bar icon, or the menu
+    return 'ALREADY ADDED, OR USE BROWSER MENU ⋮ → INSTALL'
+}
 
 export const useInstallPrompt = () => {
     const [ deferred, setDeferred ] = useState(null)
@@ -43,21 +60,21 @@ export const useInstallPrompt = () => {
         }
     },[])
 
-    // the captured event is single-use — once prompted, it can't be replayed, and the
-    // browser will hand us a fresh one later if the install still hasn't happened
+    // The captured event is single use — once prompted it can't be replayed, and the
+    // browser hands us a fresh one later if the install still hasn't happened.
+    // Returns 'accepted' | 'dismissed' | 'manual' (no prompt available; show the hint).
     const install = useCallback(async () => {
-        if(!deferred) return null
+        if(!deferred) return 'manual'
         deferred.prompt()
         const { outcome } = await deferred.userChoice.catch(() => ({ outcome: 'dismissed' }))
         setDeferred(null)
         return outcome
     },[deferred])
 
-    const iosHint = !installed && isIos() && isSafari()
-
     return {
-        canInstall: !!deferred && !installed,
-        iosHint,                       // no prompt API here — tell them where the button is
+        // shown whenever we aren't already running as an installed app
+        canInstall: !installed,
+        oneTap: !!deferred, // the browser gave us a real prompt to fire
         installed,
         install,
     }

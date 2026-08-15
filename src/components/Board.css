@@ -428,10 +428,6 @@
     color: #d6ffe4;
 }
 
-.installBtn{
-    background: rgba(61,245,110,0.1);
-}
-
 .startRow .howToBtn{
     margin-top: 0;
 }
@@ -1309,6 +1305,13 @@
     padding: 26px 34px;
     box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.02) inset;
     max-width: 92vw;
+}
+
+/* one width for every button in the panel, so a longer label doesn't make its button
+   wider than its neighbours */
+.panel .neonBtn{
+    width: min(240px, 68vw);
+    justify-content: center;
 }
 
 .panelTitle{
