@@ -65,6 +65,13 @@
   "edge_side_panel": {
     "preferred_width": 480
   },
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://tarunspartan.github.io/chain-reaction/manifest.json"
+    }
+  ],
+  "prefer_related_applications": false,
   "handle_links": "preferred",
   "shortcuts": [
     {
