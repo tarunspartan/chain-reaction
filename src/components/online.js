@@ -21,7 +21,14 @@ import {
 } from './protocol'
 
 export const APP_ID = 'https://tarunspartan.github.io/chain-reaction'
-export const ACTION_ID = 'msg'
+
+// Bumped for the 8-player rewrite. v1 spoke a different, incompatible protocol
+// ({type:'host-config'} and friends) over the action name 'msg', and shares this
+// appId and the same 5-character room codes — so a v1 client could join a v2 room,
+// connect over WebRTC, and then sit there exchanging messages neither side
+// understands, with no error on either end. A separate action name means old and new
+// clients simply never hear each other, and a stale client fails honestly instead.
+export const ACTION_ID = 'msg-v2'
 
 // Trystero has no "join failed" event — a bad code just looks like the lobby never arriving
 const CONNECT_TIMEOUT_MS = 20000

@@ -2,7 +2,7 @@
 
 [![CI/CD](https://github.com/tarunspartan/chain-reaction/actions/workflows/ci.yml/badge.svg)](https://github.com/tarunspartan/chain-reaction/actions/workflows/ci.yml)
 
-A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 to 8 players on one device (or solo against the CPU), installable as a PWA, playable offline.
+A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 to 8 players on one device or online across devices, solo against the CPU, installable to your home screen and playable offline.
 
 ![Chain Reaction gameplay](docs/gameplay.png)
 
@@ -31,7 +31,7 @@ A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 t
 - **Three board sizes** — Small (6×8), Medium (9×12), or Large (fills your screen)
 - **Animated chain reactions** — explosion shockwaves resolve in accelerating waves with growing screen shake; orbs tremble when a cell is one orb from critical mass
 - **Elimination play** — lose all your orbs and you're out; your turn is skipped; last player standing wins
-- **Online play** — host or join a match across devices with a single short room code, peer-to-peer, no account and no dedicated backend
+- **Online play, up to 8 players** — host a room, share a code or an invite link, pick colors and ready up in a lobby; peer-to-peer, no account and no dedicated backend. Drop-outs are skipped, the host role migrates if the host leaves, and every rematch returns to the lobby so the mode can change
 - **Dark neon UI** — the board glow always shows whose turn it is
 - **Synthesized sound** — explosions get louder and brighter as chains deepen (Web Audio, zero assets)
 - **PWA** — install it on your phone or desktop and play offline
@@ -49,7 +49,15 @@ A fast, neon-arcade take on the classic **Chain Reaction** strategy game — 2 t
 
 ## 🌐 Online Play
 
-Classic, Blitz and Sudden Death can all be played across devices, 2 players only. One player hosts — picking mode, board size and color — and gets a short 5-character room code to share however they'd like (text, Discord, in person). The other player enters that code and the two connect directly, peer-to-peer, over WebRTC. Matchmaking is handled by [Trystero](https://github.com/dmotz/trystero), which uses the public Nostr relay network purely to help the two browsers find each other — no account, no server of ours in the loop, and gameplay itself never touches it.
+**Up to 8 players across devices.** One player hosts and gets a short 5-character room code, plus an invite link that drops whoever opens it straight onto the color picker. Everyone else joins with the code, takes a color — which readies them up — and the host sets the mode and board size for the room. Classic, Blitz, Sudden Death and Teams are all playable online (vs CPU stays local, since the bots live on one device).
+
+Between matches the whole room lands back in the lobby, so the host can switch mode or board size and everyone re-readies. That's the rematch flow: host proposes, everyone agrees, go again.
+
+**Under the hood.** Players connect directly to each other over WebRTC; [Trystero](https://github.com/dmotz/trystero) handles matchmaking over the public Nostr relay network purely so the browsers can find each other. No account, no server of ours in the loop, and gameplay never touches the relay.
+
+Two different problems get two different answers. The **lobby** is host-authoritative — the host owns the roster and broadcasts it whole, so colour clashes and joins racing a start are all resolved in one place. **Moves** are broadcast peer-to-peer with no relay hop: only one player can legally move at a time, so a single sequence number totally orders the match and every client replays the same stream through the same pure engine. Each move carries a checksum of the board it was played on, so a client that has drifted notices immediately and pulls a fresh snapshot instead of silently diverging.
+
+**When things go wrong.** A player who drops is skipped rather than waited for — their orbs stay on the board as capturable obstacles, and the last player standing wins. If the *host* drops, the role migrates to the earliest-joined player still present (every client runs the same election, so they all agree) and the match carries on. Someone who joins mid-match waits in the lobby and plays the next one. In Blitz, a player whose tab is frozen gets played for by the host a few seconds after their clock runs out, so one backgrounded phone can't stall the room.
 
 ## 🎮 How to Play
 
@@ -81,7 +89,8 @@ npm run dev       # dev server with HMR → http://localhost:5173
 
 ```bash
 npm run build     # production build → dist/
-npm run preview   # serve the production build locally
+npm run preview   # serve the production build locally (PWA/offline only works here, not in dev)
+npm test          # unit tests for the online protocol rules
 npm run deploy    # build + publish dist/ to GitHub Pages
 ```
 
